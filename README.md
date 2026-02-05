@@ -78,3 +78,95 @@ Decision depends on feasibility within the remaining 5 weeks.
 - Exploring feasibility of Dimensioner-based solutions
 - Preparing pivot options in parallel
 - Awaiting clarity on meetings, hardware, and data access
+
+
+---
+
+
+## Environment & Usage Notes
+
+### 1. Versions & Requirements
+
+This project was developed and tested with the following environment:
+
+- **Python**: `3.10.x` (required)  
+  > ⚠️ Python 3.12+ and 3.13 are **not supported** due to Open3D compatibility.
+- **Operating System**: macOS (should also work on Linux)
+- **Required Libraries**:
+  - `open3d`
+  - `numpy`
+
+Install dependencies using:
+```bash
+pip install -r requirements.txt
+```
+
+If `requirements.txt` is not available:
+```bash
+pip install open3d numpy
+```
+
+---
+
+
+### 2. Virtual Environment (venv) Setup
+
+To avoid dependency and version conflicts, using a virtual environment is strongly recommended.
+**Create a virtual environment**
+```bash
+python3.10 -m venv venv310
+```
+
+**Activate the virtual environment**
+```bash
+python3.10 -m venv venv310
+```
+
+Verify the Python version:
+```bash
+python --version
+# Python 3.10.x
+```
+
+Then install dependencies:
+```bash
+pip install --upgrade pip
+pip install open3d numpy
+```
+
+---
+
+
+### 3. Running the Code
+The project is structured as a Python module and should be executed **from the project root directory.**
+
+**Recommended (module-based execution)**
+```bash
+python -m main
+```
+This method ensures:
+ * Correct module imports
+ * Consistent behavior across environments
+
+
+**Alternative (direct execution)**
+```bash
+python main.py
+```
+Direct execution may also work, but module-based execution is preferred.
+
+
+---
+
+
+### Notes
+
+Output point clouds are saved to the configured output directory (e.g., `outputs/`)
+ * All geometric measurements are reported in **meters**, consistent with the original point cloud units
+ * The processing pipeline includes:
+   * Radius-based outlier removal
+   * Histogram-based depth normalization
+   * RANSAC plane (floor) removal
+   * Large-plane cleanup and clustering
+   * Final object dimension estimation
+
