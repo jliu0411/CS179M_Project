@@ -91,7 +91,7 @@ This project was developed and tested with the following environment:
 
 - **Python**: `3.10.x` (required)  
   > ⚠️ Python 3.12+ and 3.13 are **not supported** due to Open3D compatibility.
-- **Operating System**: macOS (should also work on Linux)
+- **Operating System**: Windows, macOS/Linux
 - **Required Libraries**:
   - `open3d`
   - `numpy`
@@ -112,23 +112,52 @@ pip install open3d numpy
 ### 2. Virtual Environment (venv) Setup
 
 To avoid dependency and version conflicts, using a virtual environment is strongly recommended.
+
+**Download Python 3.10 if needed**
+*Windows:*
+```powershell
+winget install --id Python.Python.3.10 --exact
+```
+
+*macOS/Linux:*
+```bash
+brew install python@3.10
+echo 'export PATH="/opt/homebrew/opt/python@3.10/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
 **Create a virtual environment**
+
+*Windows:*
+```powershell
+py -3.10 -m venv venv310
+```
+
+*macOS/Linux:*
 ```bash
 python3.10 -m venv venv310
 ```
 
 **Activate the virtual environment**
-```bash
-python3.10 -m venv venv310
+
+*Windows:*
+```powershell
+.\venv310\Scripts\Activate
 ```
 
-Verify the Python version:
+*macOS/Linux:*
+```bash
+source venv310/bin/activate
+```
+
+Verify the Python version (windows/macOS/Linux):
 ```bash
 python --version
 # Python 3.10.x
 ```
 
-Then install dependencies:
+**Install dependencies**
+*macOS/Linux:*
 ```bash
 pip install --upgrade pip
 pip install open3d numpy
