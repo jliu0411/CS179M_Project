@@ -107,23 +107,6 @@ def dataclean(dir:str,
     show_step("After First DBSCAN (Largest Cluster)", pcd_target)
 
 
-    # labels2 = np.array(
-    #     pcd_target.cluster_dbscan(
-    #         eps=0.015,
-    #         min_points=50
-    #     )
-    # )
-
-    # ##
-    # # 7. Keep the densest cluster
-    # valid = labels2 >= 0
-    # counts = np.bincount(labels2[valid])
-    # largest_label2 = np.argmax(counts)
-
-    # pcd_target = pcd_target.select_by_index(
-    #     np.where(labels2 == largest_label2)[0]
-    # )
-
     #####################################
 
      # --- 6. Optional: voxel downsampling ---
@@ -160,6 +143,8 @@ def dataclean(dir:str,
        nb_neighbors=30,
        std_ratio=1.0
     )
+
+    show_step("After Fine Tuning", pcd_target)
     #####################################
 
     width = length = height = 0
