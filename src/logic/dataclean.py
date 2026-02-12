@@ -95,8 +95,14 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
 
 
     if visualize_flag:
-        o3d.visualization.draw_geometries([pcd_target])       
-
+        o3d.visualization.draw_geometries([pcd_target])
+    
+    # Return dimensions for batch processing
+    return {
+        'width': float(width),
+        'length': float(length),
+        'height': float(height)
+    }
 
 
 # dataclean("src/data/0000006.ply")
