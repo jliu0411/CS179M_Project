@@ -7,14 +7,30 @@ from src.logic.remove_plain import remove_large_planes
 def dataclean(dir:str, 
               visualize_flag=True, 
               method="AABB", 
-              output_dir="output"):
+              output_dir="output",
+              verbose=False):
 
-    pcd = o3d.io.read_point_cloud(dir)
+
+    ####
+    # Verbose Flag helper function to display each steps
+    def show_step(title, pcd, color=None):
+        if not verbose:
+            return
+        print(f"\n--- {title} ---")
+        temp = pcd
+        if color is not None:
+            temp = pcd.clone()
+            temp.paint_uniform_color(color)
+        o3d.visualization.draw_geometries([temp])
+    ####
     
+    pcd = o3d.io.read_point_cloud(dir)
+    show_step("Original Point Cloud", pcd)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    ###
     # 1. Radius outlier removal (your first layer)
     pcd, _ = pcd.remove_radius_outlier(
         nb_points=10,
@@ -23,6 +39,7 @@ def dataclean(dir:str,
 
     points = np.asarray(pcd.points)
     z = points[:, 2]
+    show_step("After Radius Outlier Removal", pcd)
 
     # 2. Normalize Z to [0, 1]
     z_min, z_max = z.min(), z.max()
@@ -42,7 +59,9 @@ def dataclean(dir:str,
     pcd_histogram = o3d.geometry.PointCloud()
     pcd_histogram.points = o3d.utility.Vector3dVector(points_clean)
 
+    show_step("After Histogram Z Filtering(Equalization)", pcd_histogram)
 
+    ###
     # 4. RANSAC
     plane_model, inliers = pcd_histogram.segment_plane(
         distance_threshold=0.005,
@@ -54,17 +73,22 @@ def dataclean(dir:str,
     normal = np.array([a, b, c])
     normal /= np.linalg.norm(normal)
 
+    ###
     # 5. Only accept near-horizontal planes
     if abs(normal @ np.array([0, 0, 1])) > 0.9:
         pcd_no_floor = pcd_histogram.select_by_index(inliers, invert=True)
     else:
         pcd_no_floor = pcd_histogram
 
+    show_step("After Floor Removal (RANSAC)", pcd_no_floor)
+
     pcd_no_planes = remove_large_planes(pcd_no_floor, max_planes=3)
+
+    show_step("After Removing Large Planes", pcd_no_planes)
 
 
     ###
-    #DBSCAN
+    # 6. DBSCAN
     labels = np.array(
         pcd_no_planes.cluster_dbscan(
             eps = 0.03,
@@ -80,6 +104,7 @@ def dataclean(dir:str,
     )
 
     pcd_target.paint_uniform_color([0, 1, 0])
+    show_step("After First DBSCAN (Largest Cluster)", pcd_target)
 
 
     labels2 = np.array(
@@ -89,7 +114,8 @@ def dataclean(dir:str,
         )
     )
 
-    # Keep the densest cluster
+    ###
+    # 7. Keep the densest cluster
     valid = labels2 >= 0
     counts = np.bincount(labels2[valid])
     largest_label2 = np.argmax(counts)
@@ -155,7 +181,7 @@ def dataclean(dir:str,
     o3d.io.write_point_cloud(str(output_path), pcd_target)
 
 
-    if visualize_flag:
+    if visualize_flag and not verbose:
         o3d.visualization.draw_geometries([pcd_target])       
 
 
