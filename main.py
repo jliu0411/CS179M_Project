@@ -1,8 +1,10 @@
 from src.logic.dataclean import dataclean
 
 def main():
-    dataclean("src/data/0000006.ply", False)
-    dataclean("src/data/0000002.ply", False)
+    method = input("Choose the Method: (AABB / OBB / PCA)\n   -->  ")
+    # dataclean("src/data/8.ply", True, method)
+    # dataclean("src/data/9.ply", True, method)
+    dataclean("src/data/sample2.ply", True, method)
 
 if __name__ == "__main__":
     main()

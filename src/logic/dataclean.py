@@ -4,8 +4,13 @@ from pathlib import Path
 from src.logic.remove_plain import remove_large_planes
 
 # Load point cloud (works for .ply and .xyz)
-def dataclean(dir:str, visualize_flag=True, output_dir="output"):
+def dataclean(dir:str, 
+              visualize_flag=True, 
+              method="AABB", 
+              output_dir="output"):
+
     pcd = o3d.io.read_point_cloud(dir)
+    
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +67,7 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
     #DBSCAN
     labels = np.array(
         pcd_no_planes.cluster_dbscan(
-            eps=0.03,
+            eps = 0.03,
             min_points=100
         )
     )
@@ -77,13 +82,69 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
     pcd_target.paint_uniform_color([0, 1, 0])
 
 
-    #### 
-    # AABB
-    aabb = pcd_target.get_axis_aligned_bounding_box()
-    extent = aabb.get_extent()  # (dx, dy, dz)
+    labels2 = np.array(
+        pcd_target.cluster_dbscan(
+            eps=0.015,
+            min_points=50
+        )
+    )
 
-    width, length, height = extent
-    print(f"AABB dimensions:")
+    # Keep the densest cluster
+    valid = labels2 >= 0
+    counts = np.bincount(labels2[valid])
+    largest_label2 = np.argmax(counts)
+
+    pcd_target = pcd_target.select_by_index(
+        np.where(labels2 == largest_label2)[0]
+    )
+
+    width = length = height = 0
+
+    #### 
+    # Axis-Aligned Bounding Box (AABB)
+    if method == "AABB":
+        aabb = pcd_target.get_axis_aligned_bounding_box()
+        extent = aabb.get_extent()  # (dx, dy, dz)
+
+        width, length, height = extent
+
+
+    ####
+    # Oriented Bounding Box (OBB)
+    elif method == "OBB":
+        obb = pcd_target.get_oriented_bounding_box()
+        extent = obb.extent  # (length, width, height) in OBB frame
+
+        dims = np.sort(extent)
+        width, length, height = dims
+
+
+    ####
+    # PCA but listed out
+    elif method == "PCA":
+        points = np.asarray(pcd_target.points)
+        centered = points - points.mean(axis=0)
+
+        cov = np.cov(centered.T)
+        eigvals, eigvecs = np.linalg.eigh(cov)
+
+        # sort eigenvectors by descending eigenvalues
+        order = np.argsort(eigvals)[::-1]
+        eigvecs = eigvecs[:, order]
+
+        # Project points onto principal axes
+        proj = centered @ eigvecs
+
+        low = np.percentile(proj, 2, axis=0)
+        high = np.percentile(proj, 98, axis=0)
+
+        dims = high - low
+        dims = np.sort(dims)
+
+        width,height,length = dims
+    
+    filename = dir.split('/')[-1]
+    print(f"{method} dimensions of {filename}:")
     print(f"Width:  {width:.3f}")
     print(f"Length: {length:.3f}")
     print(f"Height: {height:.3f}")
