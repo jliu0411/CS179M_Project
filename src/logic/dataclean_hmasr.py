@@ -4,33 +4,12 @@ from pathlib import Path
 from src.logic.remove_plain import remove_large_planes
 
 # Load point cloud (works for .ply and .xyz)
-def dataclean(dir:str, 
-              visualize_flag=True, 
-              method="AABB", 
-              output_dir="output",
-              verbose=False):
-
-
-    ####
-    # Verbose Flag helper function to display each steps
-    def show_step(title, pcd, color=None):
-        if not verbose:
-            return
-        print(f"\n--- {title} ---")
-        temp = pcd
-        if color is not None:
-            temp = pcd.clone()
-            temp.paint_uniform_color(color)
-        o3d.visualization.draw_geometries([temp])
-    ####
-    
+def dataclean(dir:str, visualize_flag=True, output_dir="output"):
     pcd = o3d.io.read_point_cloud(dir)
-    show_step("Original Point Cloud", pcd)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ###
     # 1. Radius outlier removal (your first layer)
     pcd, _ = pcd.remove_radius_outlier(
         nb_points=10,
@@ -39,7 +18,6 @@ def dataclean(dir:str,
 
     points = np.asarray(pcd.points)
     z = points[:, 2]
-    show_step("After Radius Outlier Removal", pcd)
 
     # 2. Normalize Z to [0, 1]
     z_min, z_max = z.min(), z.max()
@@ -59,9 +37,7 @@ def dataclean(dir:str,
     pcd_histogram = o3d.geometry.PointCloud()
     pcd_histogram.points = o3d.utility.Vector3dVector(points_clean)
 
-    show_step("After Histogram Z Filtering(Equalization)", pcd_histogram)
 
-    ###
     # 4. RANSAC
     plane_model, inliers = pcd_histogram.segment_plane(
         distance_threshold=0.005,
@@ -73,25 +49,20 @@ def dataclean(dir:str,
     normal = np.array([a, b, c])
     normal /= np.linalg.norm(normal)
 
-    ###
     # 5. Only accept near-horizontal planes
     if abs(normal @ np.array([0, 0, 1])) > 0.9:
         pcd_no_floor = pcd_histogram.select_by_index(inliers, invert=True)
     else:
         pcd_no_floor = pcd_histogram
 
-    show_step("After Floor Removal (RANSAC)", pcd_no_floor)
-
     pcd_no_planes = remove_large_planes(pcd_no_floor, max_planes=3)
-
-    show_step("After Removing Large Planes", pcd_no_planes)
 
 
     ###
-    # 6. DBSCAN
+    #DBSCAN
     labels = np.array(
         pcd_no_planes.cluster_dbscan(
-            eps = 0.02,
+            eps=0.02,
             min_points=100
         )
     )
@@ -104,27 +75,8 @@ def dataclean(dir:str,
     )
 
     pcd_target.paint_uniform_color([0, 1, 0])
-    show_step("After First DBSCAN (Largest Cluster)", pcd_target)
 
-
-    # labels2 = np.array(
-    #     pcd_target.cluster_dbscan(
-    #         eps=0.015,
-    #         min_points=50
-    #     )
-    # )
-
-    # ##
-    # # 7. Keep the densest cluster
-    # valid = labels2 >= 0
-    # counts = np.bincount(labels2[valid])
-    # largest_label2 = np.argmax(counts)
-
-    # pcd_target = pcd_target.select_by_index(
-    #     np.where(labels2 == largest_label2)[0]
-    # )
-
-    #####################################
+#####################################
 
      # --- 6. Optional: voxel downsampling ---
     pcd_target = pcd_target.voxel_down_sample(voxel_size=0.002)
@@ -155,63 +107,30 @@ def dataclean(dir:str,
 
     mask = mask_z & mask_x & mask_y
     pcd_target = pcd_target.select_by_index(np.where(mask)[0])
+#####################################
 
     pcd_target, _ = pcd_target.remove_statistical_outlier(
        nb_neighbors=30,
        std_ratio=1.0
     )
-    #####################################
-
-    width = length = height = 0
 
     #### 
-    # Axis-Aligned Bounding Box (AABB)
-    if method == "AABB":
-        aabb = pcd_target.get_axis_aligned_bounding_box()
-        extent = aabb.get_extent()  # (dx, dy, dz)
-
-        width, length, height = extent
-
-
-    ####
-    # Oriented Bounding Box (OBB)
-    elif method == "OBB":
-        obb = pcd_target.get_oriented_bounding_box()
-        extent = obb.extent  # (length, width, height) in OBB frame
-
-        dims = np.sort(extent)
-        width, length, height = dims
-
-
-    ####
-    # PCA but listed out
-    elif method == "PCA":
-        points = np.asarray(pcd_target.points)
-        centered = points - points.mean(axis=0)
-
-        cov = np.cov(centered.T)
-        eigvals, eigvecs = np.linalg.eigh(cov)
-
-        # sort eigenvectors by descending eigenvalues
-        order = np.argsort(eigvals)[::-1]
-        eigvecs = eigvecs[:, order]
-
-        # Project points onto principal axes
-        proj = centered @ eigvecs
-
-        low = np.percentile(proj, 2, axis=0)
-        high = np.percentile(proj, 98, axis=0)
-
-        dims = high - low
-        dims = np.sort(dims)
-
-        width,height,length = dims
+    # AABB
+    aabb = pcd_target.get_axis_aligned_bounding_box()
+    extent = aabb.get_extent()  # (dx, dy, dz)
     
-    filename = dir.split('/')[-1]
-    print(f"{method} dimensions of {filename}:")
-    print(f"Width:  {width:.3f}")
-    print(f"Length: {length:.3f}")
-    print(f"Height: {height:.3f}")
+    #obb = pcd_target.get_oriented_bounding_box()
+    #extent = obb.extent
+
+    # Before calculating OBB, visualize with coordinate frame
+    #coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+    #o3d.visualization.draw_geometries([pcd_target, aabb, coordinate_frame])
+
+    width, length, height = extent
+#    print(f"Box #{dir} dimensions:")
+#    print(f"Width:  {width:.3f}")
+#    print(f"Length: {length:.3f}")
+#    print(f"Height: {height:.3f}")
 
     input_path = Path(dir)
     output_path = output_dir / f"{input_path.stem}_cleaned.ply"
@@ -219,16 +138,9 @@ def dataclean(dir:str,
     o3d.io.write_point_cloud(str(output_path), pcd_target)
 
 
-    if visualize_flag and not verbose:
-        o3d.visualization.draw_geometries([pcd_target])      
-      
-    # Return dimensions for batch processing
-    return {
-        'width': float(width),
-        'length': float(length),
-        'height': float(height)
-    }
+    if visualize_flag:
+        o3d.visualization.draw_geometries([pcd_target])       
 
-
+    return height, width, length
 
 # dataclean("src/data/0000006.ply")
