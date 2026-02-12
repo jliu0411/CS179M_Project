@@ -157,6 +157,12 @@ python --version
 ```
 
 **Install dependencies**
+*Windows:*
+```powershell
+python.exe -m pip install --upgrade pip
+pip install open3d numpy
+```
+
 *macOS/Linux:*
 ```bash
 pip install --upgrade pip
