@@ -62,7 +62,7 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
     #DBSCAN
     labels = np.array(
         pcd_no_planes.cluster_dbscan(
-            eps=0.03,
+            eps=0.02,
             min_points=100
         )
     )
@@ -76,17 +76,61 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
 
     pcd_target.paint_uniform_color([0, 1, 0])
 
+#####################################
+
+     # --- 6. Optional: voxel downsampling ---
+    pcd_target = pcd_target.voxel_down_sample(voxel_size=0.002)
+
+    # --- 7. PCA alignment ---
+    points = np.asarray(pcd_target.points)
+    centered = points - points.mean(axis=0)
+
+    U, S, Vt = np.linalg.svd(centered, full_matrices=False)
+    aligned_points = centered @ Vt.T
+    pcd_target.points = o3d.utility.Vector3dVector(aligned_points)
+
+    pts = np.asarray(pcd_target.points)
+
+    #z_floor = np.min(pts[:, 2])
+    #mask = pts[:, 2] > z_floor + 0.003
+
+    z_floor = np.percentile(pts[:, 2], 0.5)  # Use percentile instead of min
+    z_ceiling = np.percentile(pts[:, 2], 99.5)
+    mask_z = (pts[:, 2] > z_floor) & (pts[:, 2] < z_ceiling)
+
+
+    # Remove X and Y outliers
+    x_min, x_max = np.percentile(pts[:, 0], [1, 97.5])
+    y_min, y_max = np.percentile(pts[:, 1], [1, 97.5])
+    mask_x = (pts[:, 0] > x_min) & (pts[:, 0] < x_max)
+    mask_y = (pts[:, 1] > y_min) & (pts[:, 1] < y_max)
+
+    mask = mask_z & mask_x & mask_y
+    pcd_target = pcd_target.select_by_index(np.where(mask)[0])
+#####################################
+
+    pcd_target, _ = pcd_target.remove_statistical_outlier(
+       nb_neighbors=30,
+       std_ratio=1.0
+    )
 
     #### 
     # AABB
     aabb = pcd_target.get_axis_aligned_bounding_box()
     extent = aabb.get_extent()  # (dx, dy, dz)
+    
+    #obb = pcd_target.get_oriented_bounding_box()
+    #extent = obb.extent
+
+    # Before calculating OBB, visualize with coordinate frame
+    #coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+    #o3d.visualization.draw_geometries([pcd_target, aabb, coordinate_frame])
 
     width, length, height = extent
-    print(f"AABB dimensions:")
-    print(f"Width:  {width:.3f}")
-    print(f"Length: {length:.3f}")
-    print(f"Height: {height:.3f}")
+#    print(f"Box #{dir} dimensions:")
+#    print(f"Width:  {width:.3f}")
+#    print(f"Length: {length:.3f}")
+#    print(f"Height: {height:.3f}")
 
     input_path = Path(dir)
     output_path = output_dir / f"{input_path.stem}_cleaned.ply"
@@ -97,6 +141,6 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
     if visualize_flag:
         o3d.visualization.draw_geometries([pcd_target])       
 
-
+    return height, width, length
 
 # dataclean("src/data/0000006.ply")
