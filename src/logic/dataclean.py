@@ -182,7 +182,14 @@ def dataclean(dir:str,
 
 
     if visualize_flag and not verbose:
-        o3d.visualization.draw_geometries([pcd_target])       
+        o3d.visualization.draw_geometries([pcd_target])      
+      
+    # Return dimensions for batch processing
+    return {
+        'width': float(width),
+        'length': float(length),
+        'height': float(height)
+    }
 
 
 
