@@ -1,0 +1,6 @@
+# Core dependencies for point cloud processing
+open3d
+numpy
+
+# For production deployment (optional)
+gunicorn
