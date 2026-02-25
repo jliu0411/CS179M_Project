@@ -148,28 +148,36 @@ def dataclean(dir:str,
     #####################################
 
     width = length = height = 0
+    geometry_to_show = []
+
+    # Always show cleaned target in gray
+    pcd_vis = o3d.geometry.PointCloud(pcd_target)
+    pcd_vis.paint_uniform_color([0.6, 0.6, 0.6])
+    geometry_to_show.append(pcd_vis)
 
     #### 
     # Axis-Aligned Bounding Box (AABB)
     if method == "AABB":
         aabb = pcd_target.get_axis_aligned_bounding_box()
-        extent = aabb.get_extent()  # (dx, dy, dz)
-
+        extent = aabb.get_extent()
         width, length, height = extent
 
+        aabb.color = (1, 0, 0)  # red
+        geometry_to_show.append(aabb)
 
     ####
     # Oriented Bounding Box (OBB)
     elif method == "OBB":
         obb = pcd_target.get_oriented_bounding_box()
-        extent = obb.extent  # (length, width, height) in OBB frame
-
+        extent = obb.extent
         dims = np.sort(extent)
         width, length, height = dims
 
+        obb.color = (0, 1, 0)  # green
+        geometry_to_show.append(obb)
 
     ####
-    # PCA but listed out
+    # PCA Bounding Box (manual)
     elif method == "PCA":
         points = np.asarray(pcd_target.points)
         centered = points - points.mean(axis=0)
@@ -177,43 +185,87 @@ def dataclean(dir:str,
         cov = np.cov(centered.T)
         eigvals, eigvecs = np.linalg.eigh(cov)
 
-        # sort eigenvectors by descending eigenvalues
         order = np.argsort(eigvals)[::-1]
         eigvecs = eigvecs[:, order]
 
-        # Project points onto principal axes
         proj = centered @ eigvecs
-
         low = np.percentile(proj, 2, axis=0)
         high = np.percentile(proj, 98, axis=0)
 
         dims = high - low
-        dims = np.sort(dims)
+        dims_sorted = np.sort(dims)
+        width, length, height = dims_sorted
 
-        width,height,length = dims
+        # Create bounding box from PCA frame
+        box = o3d.geometry.OrientedBoundingBox()
+        box.center = points.mean(axis=0)
+        box.R = eigvecs
+        box.extent = dims
+        box.color = (0, 0, 1)  # blue
+
+        geometry_to_show.append(box)
+
+    ####
+    # Convex Hull (AABB from hull vertices)
+    elif method == "HULL":
+        hull, _ = pcd_target.compute_convex_hull()
+        hull.compute_vertex_normals()
+        hull.paint_uniform_color([1, 0, 0])  # red
+
+        hull_points = np.asarray(hull.vertices)
+        mins = hull_points.min(axis=0)
+        maxs = hull_points.max(axis=0)
+
+        dims = maxs - mins
+        dims_sorted = np.sort(dims)
+        width, length, height = dims_sorted
+
+        geometry_to_show.append(hull)
+
+    ####
+    # Convex Hull + PCA
+    elif method == "HULL_PCA":
+        hull, _ = pcd_target.compute_convex_hull()
+        hull.compute_vertex_normals()
+        hull.paint_uniform_color([1, 0, 0])
+
+        hull_points = np.asarray(hull.vertices)
+        centered = hull_points - hull_points.mean(axis=0)
+
+        U, S, Vt = np.linalg.svd(centered, full_matrices=False)
+        aligned = centered @ Vt.T
+
+        low = aligned.min(axis=0)
+        high = aligned.max(axis=0)
+
+        dims = high - low
+        dims_sorted = np.sort(dims)
+        width, length, height = dims_sorted
+
+        geometry_to_show.append(hull)
+
+    ############################################
+
     
     filename = dir.split('/')[-1]
-    print(f"{method} dimensions of {filename}:")
-    print(f"Width:  {width:.3f}")
-    print(f"Length: {length:.3f}")
-    print(f"Height: {height:.3f}")
+
+    if verbose:
+        print(f"{method} dimensions of {filename}:")
+        print(f"Width:  {width:.3f}")
+        print(f"Length: {length:.3f}")
+        print(f"Height: {height:.3f}")
 
     input_path = Path(dir)
     output_path = output_dir / f"{input_path.stem}_cleaned.ply"
 
-    o3d.io.write_point_cloud(str(output_path), pcd_target)
-
-
-    if visualize_flag and not verbose:
-        o3d.visualization.draw_geometries([pcd_target])      
+    o3d.io.write_point_cloud(str(output_path), pcd_target)  
       
+    if visualize_flag:
+        o3d.visualization.draw_geometries(geometry_to_show)
+
     # Return dimensions for batch processing
     return {
         'width': float(width),
         'length': float(length),
         'height': float(height)
     }
-
-
-
-# dataclean("src/data/0000006.ply")
