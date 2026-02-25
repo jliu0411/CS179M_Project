@@ -1,0 +1,115 @@
+{
+    "projectId": "ply-processor",
+    "projectName": "PLY Processor",
+    "functions": [
+        {
+            "functionId": "process-ply",
+            "name": "Process PLY File",
+            "runtime": "python-3.9",
+            "execute": ["any"],
+            "events": [],
+            "schedule": "",
+            "timeout": 300,
+            "enabled": true,
+            "entrypoint": "src/main.py",
+            "path": "appwrite_functions/process-ply"
+        }
+    ],
+    "databases": [
+        {
+            "databaseId": "main",
+            "name": "Main Database",
+            "collections": [
+                {
+                    "collectionId": "results",
+                    "name": "Processing Results",
+                    "permissions": [
+                        "read(\"any\")",
+                        "create(\"any\")",
+                        "update(\"any\")",
+                        "delete(\"any\")"
+                    ],
+                    "attributes": [
+                        {
+                            "key": "filename",
+                            "type": "string",
+                            "size": 255,
+                            "required": true
+                        },
+                        {
+                            "key": "method",
+                            "type": "string",
+                            "size": 10,
+                            "required": true
+                        },
+                        {
+                            "key": "width",
+                            "type": "double",
+                            "required": true
+                        },
+                        {
+                            "key": "length",
+                            "type": "double",
+                            "required": true
+                        },
+                        {
+                            "key": "height",
+                            "type": "double",
+                            "required": true
+                        },
+                        {
+                            "key": "fileId",
+                            "type": "string",
+                            "size": 255,
+                            "required": true
+                        },
+                        {
+                            "key": "status",
+                            "type": "string",
+                            "size": 50,
+                            "required": true,
+                            "default": "processing"
+                        },
+                        {
+                            "key": "error",
+                            "type": "string",
+                            "size": 1000,
+                            "required": false
+                        }
+                    ],
+                    "indexes": [
+                        {
+                            "key": "fileId",
+                            "type": "key",
+                            "attributes": ["fileId"]
+                        },
+                        {
+                            "key": "status",
+                            "type": "key",
+                            "attributes": ["status"]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "buckets": [
+        {
+            "bucketId": "ply-files",
+            "name": "PLY Files",
+            "permissions": [
+                "read(\"any\")",
+                "create(\"any\")",
+                "update(\"any\")",
+                "delete(\"any\")"
+            ],
+            "fileSecurity": false,
+            "enabled": true,
+            "maximumFileSize": 104857600,
+            "allowedFileExtensions": ["ply"],
+            "compression": "none",
+            "encryption": true,
+            "antivirus": true
+        }
+    ]
+}
