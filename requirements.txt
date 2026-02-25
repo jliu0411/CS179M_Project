@@ -1,6 +1,7 @@
 # Core dependencies for point cloud processing
 open3d
 numpy
+appwrite>=5.0.0
 
 # For production deployment (optional)
 gunicorn
