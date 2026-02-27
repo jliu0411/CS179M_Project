@@ -172,7 +172,25 @@ pip install open3d numpy
 ---
 
 
-### 3. Running the Code
+### 3. ML Model Setup
+
+To access model libraries:
+
+Install pandas for data analysis and manipulation:
+```bash
+pip install pandas
+```
+
+Install scikit-learn for access to large library of models:
+```bash
+pip install scikit-learn
+```
+
+---
+
+
+
+### 4. Running the Code
 The project is structured as a Python module and should be executed **from the project root directory.**
 
 **Recommended (module-based execution)**
