@@ -1,3 +1,6 @@
 venv*
 __pycache__
 .DS_Store
+src/data/*
+output/*
+winenv311/
