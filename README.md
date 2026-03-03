@@ -41,43 +41,32 @@ A **Dimensioner** estimates a box’s physical dimensions (Length × Width × De
 
 ---
 
-## Proposal Ideas
+## System Pipeline
 
-- **Damage Detection**
-- **Label Reading & Verification**
-- Online lookup to validate labels/details
-- **3D Tetris** for shipping containers
-  - Optimize packing across *multiple* containers
-- **Weight Detection**
-  - Ask if weight sensors are available
-  - Useful for detecting fake returns
-- **AI Support for Dimension Detection**
-  - Background removal
-  - Bad scan detection
-  - Confidence score for scan accuracy
+The Dimensioner processes point clouds through a distinct five-step pipeline:
+- Data Acquisition: The process begins with an iPhone scan that generates a .ply file. It utilizes the device's LiDAR Scanner.
+- Pre-processing: The system performs data cleaning and plane removal.
+- Segmentation: The point cloud undergoes clustering and alignment.
+- Calculation: The system executes dimension estimation.
+- Output: The final result yields the exact Width, Length, and Height of the object.
 
 ---
 
-## Week 5 – Issue & Pivot Decision
+## The Intelligence & Model Details
 
-We may need to pivot due to time and access constraints.
-
-### Options
-1. **Continue with Dimensioner**
-   - Generate our own dataset
-   - Focus on accuracy analysis or AI-assisted improvements
-2. **Full Pivot**
-   - Analyze a sports dataset
-   - Predict win rate or game outcomes
-
-Decision depends on feasibility within the remaining 5 weeks.
+The system's optimization engine calculates dimensions using a geometric method based on linear regression.
+- Core Approach: It pairs Axis-Aligned Bounding Boxes (AABB) with multiple machine learning models (Linear, Logistical, KMeans, DTrees, MLP).
+- Optimization: It selects optimal dimensions based on the best-fitting model. The underlying equation is $y=\beta_{0}+\beta_{1}x+\epsilon$.
+- Model Architecture: Point Cloud Dimension Prediction utilizes Linear Regression with Gradient Descent.
+- Feature Set: The model is trained on 15 Point Cloud Stats.
+- Dataset: The dataset consists of 40 samples.
 
 ---
 
 ## Current Status
-- Exploring feasibility of Dimensioner-based solutions
-- Preparing pivot options in parallel
-- Awaiting clarity on meetings, hardware, and data access
+- Polishing current methods for data cleaning
+- Implementing current machine learning models
+- Imrpove Mobile UI/UX
 
 
 ---
