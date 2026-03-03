@@ -2,24 +2,40 @@ import csv
 from pathlib import Path
 from src.logic.dataclean import dataclean
 
+VALID_METHODS = {"AABB", "OBB", "HULL", "PCA", "HULL_PCA"}
+
 def truncate(f, n):
     """Truncates a float f to n decimal places without rounding"""
     factor = 10**n
     return int(f * factor) / factor
 
+def ask_yes_no(prompt):
+    #Prompt user for Y/N returns a bool 
+    while True:
+        answer = input(prompt).strip().upper()
+        if answer in {"Y", "N"}:
+            return answer == "Y"
+        print("Invalid input. Please enter Y or N")
+
+def ask_method():
+    #prompt user for which dimension extraction method 
+    options = " / ".join(sorted(VALID_METHODS))
+    while True:
+        method = input(f"Choose the Method: ({options})\n  -->  ").strip().upper()
+        if method in VALID_METHODS:
+            return method
+        print(f"Invalid Method. Please choose one of {options}")
+
+
 def main():
 
     # Choose method
-    method = input("Choose the Method: (AABB / OBB / HULL / PCA)\n   -->  ").strip().upper()
-    visualization = input("Would you like to visualize each result? (Y/N)\n   -->  ").strip().upper()
+    method = ask_method()
+    visualization = ask_yes_no("Would you like to visualize each result? (Y/N)\n   -->  ")
     visualization_flag = False
     if visualization == "Y":
         visualization_flag = True
-    verbose = input("Would you like to execute with verbose mode? (Y/N)\n   -->  ").strip().upper()
-    verbose_flag = False
-    if verbose == "Y":
-        verbose_flag = True
-
+    verbose_flag = ask_yes_no("Would you like to execute with verbose mode? (Y/N)\n   -->  ")
 
     data_dir = Path("src/data/pictures")
     output_csv = Path(f"output/statistics/{method}_measurement_results.csv")
@@ -28,10 +44,10 @@ def main():
         print("Data directory does not exist.")
         return
 
-    ply_files = sorted(
-        data_dir.glob("*.ply"),
-        key=lambda x: int(x.stem)
-    )
+    numeric_stem_files = [f for f in data_dir.glob("*.ply") if f.stem.isdigit()]
+    non_numeric_stem_files = [f for f in data_dir.glob("*.ply") if not f.stem.isdigit()]
+
+    ply_files = sorted(numeric_stem_files, key=lambda x: int(x.stem)) + sorted(non_numeric_stem_files)
 
     if not ply_files:
         print("No .ply files found.")
