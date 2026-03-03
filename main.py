@@ -1,4 +1,5 @@
 import csv
+import pandas as pd
 from pathlib import Path
 from src.logic.dataclean import dataclean
 from src.model.mlmodel import load_data_from_csv, train_logistic_regression, train_decision_tree, train_kmeans, train_mlp
@@ -104,6 +105,55 @@ def run_ml_benchmark():
         
         for rank, (model_name, score) in enumerate(sorted_scores, 1):
             print(f"{rank}. {model_name}: {score * 100:.2f}%")
+
+
+def compare_between_csv(created_csv: Path, reference_csv: Path):
+    ACCURACY_THRESHOLD = 0.80
+    if not created_csv.exists():
+        print(f"Created CSV file {created_csv} does not exist.")
+        return
+
+    if not reference_csv.exists():
+        print(f"Reference CSV file {reference_csv} does not exist.")
+        return
+
+    created_df = pd.read_csv(created_csv)
+    reference_df = pd.read_csv(reference_csv)
+
+    created_df.columns = created_df.columns.str.strip()
+    reference_df.columns = reference_df.columns.str.strip()
+
+    merged_df = created_df.merge(reference_df, on="number", suffixes=("_created", "_ref"))
+
+    dims = ['Height', 'Width', 'Length']
+    accurate_flags = []
+
+    for _, row in merged_df.iterrows():
+        all_accurate = True
+        for dim in dims:
+            created_value = row[f"{dim}_created"]
+            reference_value = row[f"{dim}_ref"]
+            
+            if reference_value == 0:
+                all_accurate = False
+                break
+
+            ratio = min(created_value, reference_value) / max(created_value, reference_value)
+            if ratio < ACCURACY_THRESHOLD:
+                all_accurate = False
+                break
+
+        accurate_flags.append(1 if all_accurate else 0)
+
+    merged_df["is_accurate"] = accurate_flags
+
+    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "is_accurate"]
+    result_df = merged_df[output_cols].rename(columns={
+        "Height_created": "Height",
+        "Width_created": "Width",
+        "Length_created": "Length"
+    })
+    result_df.to_csv(created_csv, index=False)
 
 if __name__ == "__main__":
     main()
