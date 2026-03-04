@@ -2,7 +2,7 @@ import csv
 import pandas as pd
 from pathlib import Path
 from src.logic.dataclean import dataclean
-from src.model.mlmodel import load_data_from_csv, train_logistic_regression, train_decision_tree, train_kmeans, train_mlp
+from src.model.mlmodel import load_data_from_csv, train_logistic_regression, train_decision_tree, train_mlp
 
 def truncate(f, n):
     """Truncates a float f to n decimal places without rounding"""
@@ -59,6 +59,7 @@ def main():
         ])
 
     # Save to CSV
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["number", "Height", "Width", "Length"])
@@ -66,8 +67,14 @@ def main():
 
     print(f"\nSaved results to {output_csv}")
 
+    run_comparison = input("Would you like to compare against a reference CSV? (Y/N)\n   -->  ").strip().upper()
+    if run_comparison == "Y":
+        reference_csv = Path(r"Measurements_clean - Sheet1.csv")
+        compare_between_csv(output_csv, reference_csv)
+        print(f"Comparison complete. Results saved to {output_csv}")
+
 def run_ml_benchmark():
-    csv_path = input("Enter the path to your hand-labeled CSV file:\n --> ").strip()
+    csv_path = Path(r"output\statistics\AABB_measurement_results.csv")
 
     X, y = load_data_from_csv(csv_path, target_column="is_accurate")
     
@@ -90,10 +97,6 @@ def run_ml_benchmark():
         # 3. Run Multilayer Perceptron (Neural Network)
         _, _, acc_mlp = train_mlp(X, y, verbose=False)
         scores["Neural Network (MLP)"] = acc_mlp
-
-        # 4. Run K-Means Clustering
-        _, _, acc_kmeans = train_kmeans(X, num_clusters=2, verbose=False)
-        scores["K-Means Clustering"] = acc_kmeans
         
         # --- THE RESULTS ---
         print("\n" + "="*40)
@@ -108,7 +111,6 @@ def run_ml_benchmark():
 
 
 def compare_between_csv(created_csv: Path, reference_csv: Path):
-    ACCURACY_THRESHOLD = 0.80
     if not created_csv.exists():
         print(f"Created CSV file {created_csv} does not exist.")
         return
@@ -126,28 +128,40 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
     merged_df = created_df.merge(reference_df, on="number", suffixes=("_created", "_ref"))
 
     dims = ['Height', 'Width', 'Length']
-    accurate_flags = []
+    confidence_scores = []
 
     for _, row in merged_df.iterrows():
-        all_accurate = True
+        ratios = []
         for dim in dims:
-            created_value = row[f"{dim}_created"]
+            created_value = row[f"{dim}_created"] * 100
             reference_value = row[f"{dim}_ref"]
             
             if reference_value == 0:
-                all_accurate = False
-                break
+                ratios.append(0)
+                continue
 
             ratio = min(created_value, reference_value) / max(created_value, reference_value)
-            if ratio < ACCURACY_THRESHOLD:
-                all_accurate = False
-                break
+            ratios.append(ratio)
 
-        accurate_flags.append(1 if all_accurate else 0)
+        confidence = sum(ratios) / len(ratios)
+        confidence_scores.append(round(confidence * 100, 2))
 
-    merged_df["is_accurate"] = accurate_flags
+    merged_df["confidence"] = confidence_scores
 
-    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "is_accurate"]
+    print(f"\nAverage Confidence: {sum(confidence_scores) / len(confidence_scores):.2f}%")
+    print(f"Best:  {max(confidence_scores):.2f}% (object {merged_df.loc[merged_df['confidence'].idxmax(), 'number']})")
+    print(f"Worst: {min(confidence_scores):.2f}% (object {merged_df.loc[merged_df['confidence'].idxmin(), 'number']})")
+
+    for dim in dims:
+        dim_ratios = []
+        for _, row in merged_df.iterrows():
+            created = row[f"{dim}_created"] * 100
+            ref = row[f"{dim}_ref"]
+            if ref != 0:
+                dim_ratios.append(min(created, ref) / max(created, ref))
+        print(f"{dim} avg confidence: {sum(dim_ratios)/len(dim_ratios)*100:.2f}%")
+
+    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "confidence"]
     result_df = merged_df[output_cols].rename(columns={
         "Height_created": "Height",
         "Width_created": "Width",
