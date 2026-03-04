@@ -8,7 +8,7 @@ const API_CONFIG = {
     description: 'Local development server',
   },
   production: {
-    baseURL: 'https://ply-scanner-backend.onrender.com', 
+    baseURL: 'https://cs179m-project-test.onrender.com', 
     description: 'Production server on Render',
   },
 };

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import axios from 'axios';
 import { API_BASE_URL, API_ENVIRONMENT, API_ENDPOINTS, getAPIInfo } from '@/constants/api';
@@ -11,7 +11,8 @@ export default function HomeScreen() {
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Log API configuration on mount
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     getAPIInfo();
   }, []);
@@ -46,6 +47,14 @@ export default function HomeScreen() {
   const processFile = async () => {
     if (!file) return;
 
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
     setLoading(true);
     setStatusMessage('Uploading...');
     setError(null);
@@ -59,11 +68,12 @@ export default function HomeScreen() {
         name: file.name,
       });
 
-      console.log(`📤 Uploading to: ${API_BASE_URL}${API_ENDPOINTS.uploadPLY}`);
+      console.log(`Uploading to: ${API_BASE_URL}${API_ENDPOINTS.uploadPLY}`);
 
       const response = await axios.post(`${API_BASE_URL}${API_ENDPOINTS.uploadPLY}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000, // 2 minutes for Render cold starts
+        timeout: 120000,
+        signal: abortControllerRef.current.signal,
       });
 
       if (response.data.success) {
@@ -71,6 +81,12 @@ export default function HomeScreen() {
         setStatusMessage('Complete ✓');
       }
     } catch (err: any) {
+      if (axios.isCancel(err) || err.name === 'CanceledError') {
+        console.log('Request cancelled');
+        setStatusMessage('Cancelled');
+        return;
+      }
+      
       console.error('Upload error:', err);
       if (err.code === 'ECONNABORTED') {
         setError('Server timeout - it may be waking up. Try again in 30 seconds.');
@@ -79,14 +95,49 @@ export default function HomeScreen() {
       }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
   const reset = () => {
+    //If a request is in progress, show confirmation
+    if (loading) {
+      Alert.alert(
+        'Cancel Processing?',
+        'Are you sure you want to cancel the current upload?',
+        [
+          {
+            text: 'No',
+            style: 'cancel',
+          },
+          {
+            text: 'Yes',
+            style: 'destructive',
+            onPress: () => {
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
+                console.log('Request cancelled by user');
+              }
+              
+              setFile(null);
+              setDimensions(null);
+              setStatusMessage('');
+              setError(null);
+              setLoading(false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+    
+    // If no request in progress, just reset normally
     setFile(null);
     setDimensions(null);
     setStatusMessage('');
     setError(null);
+    setLoading(false);
   };
 
   return (
