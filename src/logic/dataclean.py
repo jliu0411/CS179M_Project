@@ -95,7 +95,14 @@ def dataclean(dir:str, visualize_flag=True, output_dir="output"):
 
 
     if visualize_flag:
-        o3d.visualization.draw_geometries([pcd_target])       
+        o3d.visualization.draw_geometries([pcd_target])
+    
+    # Return dimensions as a dictionary
+    return {
+        "width": float(width),
+        "length": float(length),
+        "height": float(height)
+    }       
 
 
 
