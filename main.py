@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 from src.logic.dataclean import dataclean
 
-VALID_METHODS = {"AABB", "OBB", "HULL", "PCA", "HULL_PCA"}
+VALID_METHODS = ("AABB", "OBB", "HULL", "PCA", "HULL_PCA")
 
 def truncate(f, n):
     """Truncates a float f to n decimal places without rounding"""
@@ -19,7 +19,7 @@ def ask_yes_no(prompt):
 
 def ask_method():
     #prompt user for which dimension extraction method 
-    options = " / ".join(sorted(VALID_METHODS))
+    options = " / ".join(VALID_METHODS)
     while True:
         method = input(f"Choose the Method: ({options})\n  -->  ").strip().upper()
         if method in VALID_METHODS:
