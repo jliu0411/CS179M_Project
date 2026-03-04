@@ -31,10 +31,7 @@ def main():
 
     # Choose method
     method = ask_method()
-    visualization = ask_yes_no("Would you like to visualize each result? (Y/N)\n   -->  ")
-    visualization_flag = False
-    if visualization == "Y":
-        visualization_flag = True
+    visualization_flag = ask_yes_no("Would you like to visualize each result? (Y/N)\n   -->  ")
     verbose_flag = ask_yes_no("Would you like to execute with verbose mode? (Y/N)\n   -->  ")
 
     data_dir = Path("src/data/pictures")
@@ -54,23 +51,30 @@ def main():
         return
 
     results = []
+    failures = []
 
     for file in ply_files:
         print(f"\nProcessing: {file.name}")
 
-        dims = dataclean(
-            str(file),
-            visualize_flag=visualization_flag,
-            method=method,
-            verbose=verbose_flag
-        )
+        try:
+            dims = dataclean(
+                str(file),
+                visualize_flag=visualization_flag,
+                method=method,
+                verbose=verbose_flag
+            )
 
-        results.append([
-            file.stem,  # index                
-            truncate(dims["height"], 3),
-            truncate(dims["width"], 3),
-            truncate(dims["length"], 3)
-        ])
+            results.append([
+                file.stem,  # index                
+                truncate(dims["height"], 3),
+                truncate(dims["width"], 3),
+                truncate(dims["length"], 3)
+            ])
+        except Exception as exc:  # Keep batch run alive if one file fails.
+            print(f"Failed to process {file.name}: {exc}")
+            failures.append(file.name)
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
 
     # Save to CSV
     with open(output_csv, mode="w", newline="") as f:
@@ -79,7 +83,8 @@ def main():
         writer.writerows(results)
 
     print(f"\nSaved results to {output_csv}")
-
+    if failures:
+        print(f"Skipped {len(failures)} files due to processing errors: {', '.join(failures)}")
 
 if __name__ == "__main__":
     main()
