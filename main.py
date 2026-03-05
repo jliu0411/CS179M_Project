@@ -73,8 +73,12 @@ def main():
         compare_between_csv(output_csv, reference_csv)
         print(f"Comparison complete. Results saved to {output_csv}")
 
-def run_ml_benchmark():
-    csv_path = Path(r"output\statistics\AABB_measurement_results.csv")
+        run_benchmark = input("Would you like to run an ML benchmark on the results? (Y/N)\n   -->  ").strip().upper()
+        if run_benchmark == "Y":
+            run_ml_benchmark(output_csv)
+
+def run_ml_benchmark(csv_path: Path):
+    # csv_path = Path(r"output\statistics\AABB_measurement_results.csv")
 
     X, y = load_data_from_csv(csv_path, target_column="is_accurate")
     
@@ -111,6 +115,7 @@ def run_ml_benchmark():
 
 
 def compare_between_csv(created_csv: Path, reference_csv: Path):
+    ACCURACY_THRESHOLD = 0.95
     if not created_csv.exists():
         print(f"Created CSV file {created_csv} does not exist.")
         return
@@ -129,24 +134,33 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
 
     dims = ['Height', 'Width', 'Length']
     confidence_scores = []
+    accurate_flags = []
 
     for _, row in merged_df.iterrows():
         ratios = []
+        all_accurate = True
+
         for dim in dims:
             created_value = row[f"{dim}_created"] * 100
             reference_value = row[f"{dim}_ref"]
-            
+
             if reference_value == 0:
                 ratios.append(0)
+                all_accurate = False
                 continue
 
             ratio = min(created_value, reference_value) / max(created_value, reference_value)
             ratios.append(ratio)
 
+            if ratio < ACCURACY_THRESHOLD:
+                all_accurate = False
+
         confidence = sum(ratios) / len(ratios)
         confidence_scores.append(round(confidence * 100, 2))
+        accurate_flags.append(1 if all_accurate else 0)
 
     merged_df["confidence"] = confidence_scores
+    merged_df["is_accurate"] = accurate_flags
 
     print(f"\nAverage Confidence: {sum(confidence_scores) / len(confidence_scores):.2f}%")
     print(f"Best:  {max(confidence_scores):.2f}% (object {merged_df.loc[merged_df['confidence'].idxmax(), 'number']})")
@@ -161,7 +175,7 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
                 dim_ratios.append(min(created, ref) / max(created, ref))
         print(f"{dim} avg confidence: {sum(dim_ratios)/len(dim_ratios)*100:.2f}%")
 
-    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "confidence"]
+    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "confidence", "is_accurate"]
     result_df = merged_df[output_cols].rename(columns={
         "Height_created": "Height",
         "Width_created": "Width",
