@@ -63,7 +63,8 @@ def main():
     methods = {
         "AABB": base_dir / "AABB_measurement_results.csv",
         "HULL": base_dir / "HULL_measurement_results.csv",
-        "OBB":  base_dir / "OBB_measurement_results.csv"
+        "OBB":  base_dir / "OBB_measurement_results.csv",
+        "HULL_WO_NORM":  base_dir / "pre_geometric_norm_HULL_measurement_results.csv"
     }
 
     print("\n===== SORTED DIMENSION COMPARISON =====")

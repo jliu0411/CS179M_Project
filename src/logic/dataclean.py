@@ -109,7 +109,7 @@ def dataclean(dir:str,
 
     #####################################
 
-     # --- 6. Optional: voxel downsampling ---
+    # --- 6. Optional: voxel downsampling ---
     pcd_target = pcd_target.voxel_down_sample(voxel_size=0.002)
 
     # --- 7. PCA alignment ---
@@ -144,7 +144,7 @@ def dataclean(dir:str,
        std_ratio=1.0
     )
 
-    show_step("After Fine Tuning", pcd_target)
+    show_step("After Geometric Normalization", pcd_target)
     #####################################
 
     width = length = height = 0
