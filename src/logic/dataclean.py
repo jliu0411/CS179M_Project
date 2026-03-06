@@ -25,6 +25,8 @@ def dataclean(dir:str,
     ####
     
     pcd = o3d.io.read_point_cloud(dir)
+    pcd_raw = pcd
+    total_points = len(pcd.points)
     show_step("Original Point Cloud", pcd)
 
     output_dir = Path(output_dir)
@@ -263,9 +265,42 @@ def dataclean(dir:str,
     if visualize_flag:
         o3d.visualization.draw_geometries(geometry_to_show)
 
+    features = extract_features(pcd_raw, pcd_target, inliers, total_points)
+    
     # Return dimensions for batch processing
     return {
         'width': float(width),
         'length': float(length),
-        'height': float(height)
+        'height': float(height),
+        'point_count': features['point_count'],
+        'ransac_inlier_ratio': features['ransac_inlier_ratio'],
+        'std_x': features['std_x'],
+        'std_y': features['std_y'],
+        'std_z': features['std_z'],
+        'aspect_ratio': features['aspect_ratio']
+    }
+
+def extract_features(pcd_raw, pcd_target, inliers, total_points):
+    pts = np.asarray(pcd_target.points)
+    
+    point_count = len(pts)
+    ransac_inlier_ratio = len(inliers) / total_points
+    
+    # How spread out the final cluster is
+    std_x = pts[:, 0].std()
+    std_y = pts[:, 1].std()
+    std_z = pts[:, 2].std()
+    
+    # Box shape sanity - a good box should have reasonable aspect ratio
+    dims = pts.max(axis=0) - pts.min(axis=0)
+    sorted_dims = np.sort(dims)
+    aspect_ratio = float(sorted_dims[0] / sorted_dims[2]) if sorted_dims[2] != 0 else 0
+    
+    return {
+        "point_count": point_count,
+        "ransac_inlier_ratio": ransac_inlier_ratio,
+        "std_x": std_x,
+        "std_y": std_y,
+        "std_z": std_z,
+        "aspect_ratio": aspect_ratio
     }
