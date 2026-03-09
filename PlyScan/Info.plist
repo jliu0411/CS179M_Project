@@ -26,6 +26,8 @@
 	<string>PlyScan needs camera access to capture 3D scans</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>PlyScan needs photo library access to save scans</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PlyScan needs local network access to automatically discover and connect to your processing server</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

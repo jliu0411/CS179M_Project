@@ -15,6 +15,9 @@ struct ManualUploadView: View {
     @State private var uploadResult: UploadResponse?
     @State private var errorMessage: String?
     @State private var showingResult = false
+    @State private var hasRequestedNetworkPermission = false
+    
+    @StateObject private var serverDiscovery = ServerDiscovery.shared
     
     var body: some View {
         NavigationView {
@@ -149,6 +152,20 @@ struct ManualUploadView: View {
             .navigationTitle("Upload")
             .sheet(isPresented: $showingFilePicker) {
                 DocumentPicker(selectedURL: $selectedFileURL)
+            }
+            .onAppear {
+                // Trigger network permission prompt on first view
+                if !hasRequestedNetworkPermission {
+                    hasRequestedNetworkPermission = true
+                    // This will trigger the local network permission prompt
+                    serverDiscovery.getServerURL { url in
+                        if let url = url {
+                            NSLog("✅ Server discovered: \(url)")
+                        } else {
+                            NSLog("⚠️ No server found on local network")
+                        }
+                    }
+                }
             }
         }
     }
