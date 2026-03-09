@@ -20,15 +20,6 @@ def ask_yes_no(prompt):
             return answer == "Y"
         print("Invalid input. Please enter Y or N")
 
-def ask_method():
-    #prompt user for which dimension extraction method 
-    options = " / ".join(VALID_METHODS)
-    while True:
-        method = input(f"Choose the Method: ({options})\n  -->  ").strip().upper()
-        if method in VALID_METHODS:
-            return method
-        print(f"Invalid Method. Please choose one of {options}")
-
 def ask_file_selection(ply_files):
     # ask user whether to run all files or specific ones. Returns the filtered list of files to run.
     while True:
@@ -63,13 +54,11 @@ def ask_file_selection(ply_files):
 def main():
 
     # Choose method
-    # method = ask_method()
-    method = "AABB"     # use AABB as default
     visualization_flag = ask_yes_no("Would you like to visualize the result? (Y/N)\n   -->  ")
     verbose_flag = ask_yes_no("Would you like to execute with verbose mode (show all steps)? (Y/N)\n   -->  ")
 
     data_dir = Path("src/data/pictures")
-    output_csv = Path(f"output/statistics/{method}_measurement_results.csv")
+    output_csv = Path(f"output/statistics/AABB_measurement_results.csv")
 
     if not data_dir.exists():
         print("Data directory does not exist.")
@@ -96,7 +85,6 @@ def main():
             dims = dataclean(
                 str(file),
                 visualize_flag=visualization_flag,
-                method=method,
                 verbose=verbose_flag
             )
 
@@ -229,7 +217,7 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
         all_accurate = True
 
         for dim in dims:
-            created_value = row[f"{dim}_created"] * 100
+            created_value = row[f"{dim}_created"]
             reference_value = row[f"{dim}_ref"]
 
             if reference_value == 0:
@@ -257,7 +245,7 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
     for dim in dims:
         dim_ratios = []
         for _, row in merged_df.iterrows():
-            created = row[f"{dim}_created"] * 100
+            created = row[f"{dim}_created"]
             ref = row[f"{dim}_ref"]
             if ref != 0:
                 dim_ratios.append(min(created, ref) / max(created, ref))
