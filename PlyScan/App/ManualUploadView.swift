@@ -16,6 +16,8 @@ struct ManualUploadView: View {
     @State private var errorMessage: String?
     @State private var showingResult = false
     @State private var hasRequestedNetworkPermission = false
+    @State private var showServerSettings = false
+    @State private var manualServerIP = ""
     
     @StateObject private var serverDiscovery = ServerDiscovery.shared
     
@@ -40,6 +42,81 @@ struct ManualUploadView: View {
                             .padding(.horizontal)
                     }
                     .padding(.top, 40)
+                    
+                    // Server Status Section
+                    GroupBox(label: Label("Server Status", systemImage: "network")) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let serverURL = serverDiscovery.discoveredServerURL {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 10, height: 10)
+                                    Text("Connected")
+                                        .font(.subheadline)
+                                        .foregroundColor(.green)
+                                    Spacer()
+                                }
+                                
+                                Text(serverURL)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if serverDiscovery.isSearching {
+                                HStack {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Searching for server...")
+                                        .font(.subheadline)
+                                        .foregroundColor(.orange)
+                                }
+                            } else {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 10, height: 10)
+                                    Text("Not Connected")
+                                        .font(.subheadline)
+                                        .foregroundColor(.red)
+                                }
+                                
+                                Text("Make sure your Mac server is running")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Button(action: {
+                                showServerSettings.toggle()
+                            }) {
+                                Text(showServerSettings ? "Hide Settings" : "Manual Server Entry")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            if showServerSettings {
+                                VStack(spacing: 8) {
+                                    TextField("Enter Mac IP (e.g., 10.13.173.118)", text: $manualServerIP)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .autocapitalization(.none)
+                                        .keyboardType(.decimalPad)
+                                    
+                                    Button("Set Manual Server") {
+                                        if !manualServerIP.isEmpty {
+                                            let serverURL = "http://\(manualServerIP):8000"
+                                            serverDiscovery.discoveredServerURL = serverURL
+                                            errorMessage = "Testing server at \(serverURL)..."
+                                            showServerSettings = false
+                                        }
+                                    }
+                                    .font(.caption)
+                                    .padding(8)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(6)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    .padding(.horizontal)
                     
                     // File Selection
                     if let fileURL = selectedFileURL {

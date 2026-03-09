@@ -62,17 +62,26 @@ class UploadService {
         // Verify file exists
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             NSLog("❌ File not found at: %@", fileURL.path)
-            completion(.failure(.fileNotFound))
+            DispatchQueue.main.async {
+                completion(.failure(.fileNotFound))
+            }
             return
         }
         
         NSLog("✅ Found file at: %@", fileURL.path)
         
         // Discover server URL
+        NSLog("🔍 Starting server discovery...")
         ServerDiscovery.shared.getServerURL { [weak self] baseURL in
-            guard let self = self, let baseURL = baseURL else {
+            guard let self = self else { return }
+            
+            NSLog("📞 getServerURL callback - result: %@", baseURL ?? "nil")
+            
+            guard let baseURL = baseURL else {
                 NSLog("❌ Could not find server on network")
-                completion(.failure(.invalidURL))
+                DispatchQueue.main.async {
+                    completion(.failure(.invalidURL))
+                }
                 return
             }
             

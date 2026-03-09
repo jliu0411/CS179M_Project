@@ -29,18 +29,92 @@ class ServerDiscovery: ObservableObject {
     
     // Get current server URL or trigger discovery
     func getServerURL(completion: @escaping (String?) -> Void) {
-        // If we have a cached URL, verify it works
-        if let url = discoveredServerURL {
-            testServer(url: url) { success in
+        NSLog("🔍 ServerDiscovery: Starting server search...")
+        
+        // Try cached server first if available
+        if let cachedURL = discoveredServerURL {
+            NSLog("🔍 Testing cached server: %@", cachedURL)
+            testServer(url: cachedURL, timeout: 2.0) { success in
                 if success {
-                    completion(url)
+                    NSLog("✅ Using cached server: %@", cachedURL)
+                    DispatchQueue.main.async {
+                        completion(cachedURL)
+                    }
+                    return
+                }
+                NSLog("❌ Cached server not responding")
+                self.tryCommonServers(completion: completion)
+            }
+            return
+        }
+        
+        // No cache, try common servers
+        tryCommonServers(completion: completion)
+    }
+    
+    // Try common server locations before full network scan
+    private func tryCommonServers(completion: @escaping (String?) -> Void) {
+        // Build list of likely server addresses
+        var candidates: [String] = []
+        
+        // 1. Localhost (for simulator)
+        candidates.append("http://127.0.0.1:\(port)")
+        
+        // 2. Gateway IP (often the Mac when iPhone is tethered or on same network)
+        if let localIP = getLocalIPAddress() {
+            NSLog("📱 Device IP: %@", localIP)
+            let components = localIP.components(separatedBy: ".")
+            if components.count == 4 {
+                // Try common gateway: .1
+                let gateway = "\(components[0]).\(components[1]).\(components[2]).1"
+                candidates.append("http://\(gateway):\(port)")
+                
+                // Try nearby IPs (likely server IPs)
+                for i in 1...20 {
+                    let ip = "\(components[0]).\(components[1]).\(components[2]).\(i)"
+                    if ip != localIP {
+                        candidates.append("http://\(ip):\(port)")
+                    }
+                }
+            }
+        }
+        
+        NSLog("🔍 Testing %d candidate servers...", candidates.count)
+        
+        // Test candidates in parallel with longer timeout
+        let group = DispatchGroup()
+        var foundServer: String?
+        
+        for candidate in candidates {
+            group.enter()
+            testServer(url: candidate, timeout: 3.0) { success in
+                if success && foundServer == nil {
+                    foundServer = candidate
+                    NSLog("✅ Found server at: %@", candidate)
+                }
+                group.leave()
+            }
+        }
+        
+        // Wait for quick tests to complete
+        DispatchQueue.global().async {
+            let result = group.wait(timeout: .now() + 5)
+            
+            DispatchQueue.main.async {
+                if let server = foundServer {
+                    self.discoveredServerURL = server
+                    if let ip = server.components(separatedBy: "://").last?.components(separatedBy: ":").first {
+                        self.cachedIP = ip
+                    }
+                    completion(server)
+                } else if result == .timedOut {
+                    NSLog("⚠️ Quick scan timed out, trying full network scan...")
+                    self.discoverServer(completion: completion)
                 } else {
-                    // Cached server not responding, search again
+                    NSLog("❌ No server found in quick scan, trying full network scan...")
                     self.discoverServer(completion: completion)
                 }
             }
-        } else {
-            discoverServer(completion: completion)
         }
     }
     
@@ -48,15 +122,17 @@ class ServerDiscovery: ObservableObject {
     func discoverServer(completion: @escaping (String?) -> Void) {
         isSearching = true
         
-        // Get local IP prefix (e.g., "192.168.1")
+        // Get local IP prefix (e.g., "10.13.173")
         guard let localIP = getLocalIPAddress() else {
             NSLog("❌ Could not determine local IP address")
             isSearching = false
-            completion(nil)
+            DispatchQueue.main.async {
+                completion(nil)
+            }
             return
         }
         
-        NSLog("🔍 Scanning network %@.0/24 for server...", localIP)
+        NSLog("🔍 Full network scan of %@.0/24 for server...", localIP)
         
         let prefix = localIP.components(separatedBy: ".").dropLast().joined(separator: ".")
         
@@ -70,7 +146,7 @@ class ServerDiscovery: ObservableObject {
             let testURL = "http://\(testIP):\(port)"
             
             group.enter()
-            testServer(url: testURL) { success in
+            testServer(url: testURL, timeout: 1.0) { success in
                 if success && foundServer == nil {
                     foundServer = testURL
                     NSLog("✅ Found server at %@", testURL)
@@ -105,23 +181,40 @@ class ServerDiscovery: ObservableObject {
     }
     
     // Test if a server URL is responding
-    private func testServer(url: String, completion: @escaping (Bool) -> Void) {
+    private func testServer(url: String, timeout: TimeInterval = 0.5, completion: @escaping (Bool) -> Void) {
         guard let healthURL = URL(string: "\(url)/api/health") else {
+            NSLog("❌ Invalid health URL: %@/api/health", url)
             completion(false)
             return
         }
         
         var request = URLRequest(url: healthURL)
-        request.timeoutInterval = 0.5 // Fast timeout for scanning
+        request.timeoutInterval = timeout
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        
+        NSLog("🏥 Testing health endpoint: %@", healthURL.absoluteString)
         
         URLSession.shared.dataTask(with: request) { data, response, error in
-            guard error == nil,
-                  let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
+            if let error = error {
+                NSLog("❌ Health check failed: %@", error.localizedDescription)
                 completion(false)
                 return
             }
-            completion(true)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                NSLog("❌ No HTTP response")
+                completion(false)
+                return
+            }
+            
+            NSLog("📡 Health check status code: %d", httpResponse.statusCode)
+            
+            if httpResponse.statusCode == 200 {
+                NSLog("✅ Server is healthy!")
+                completion(true)
+            } else {
+                completion(false)
+            }
         }.resume()
     }
     
