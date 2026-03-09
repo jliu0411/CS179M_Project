@@ -29,13 +29,44 @@ def ask_method():
             return method
         print(f"Invalid Method. Please choose one of {options}")
 
+def ask_file_selection(ply_files):
+    # ask user whether to run all files or specific ones. Returns the filtered list of files to run.
+    while True:
+        mode = input("Run mode:\n1. Run ALL files\n2. Run SPECIFIC files\n --> ").strip()
+
+        if mode == "1":
+            return ply_files
+
+        elif mode == "2":
+            file_names = [f.name for f in ply_files]
+            print("\nAvailable files:")
+            print(", ".join(file_names))
+
+            selected = input(
+                "\nEnter file names separated by commas:\n --> "
+            ).strip()
+
+            selected_names = [s.strip() for s in selected.split(",")]
+
+            selected_files = [f for f in ply_files if f.name in selected_names]
+
+            if not selected_files:
+                print("No valid files selected.")
+                continue
+
+            return selected_files
+
+        else:
+            print("Invalid selection. Please choose 1 or 2.")
+
 
 def main():
 
     # Choose method
-    method = ask_method()
-    visualization_flag = ask_yes_no("Would you like to visualize each result? (Y/N)\n   -->  ")
-    verbose_flag = ask_yes_no("Would you like to execute with verbose mode? (Y/N)\n   -->  ")
+    # method = ask_method()
+    method = "AABB"     # use AABB as default
+    visualization_flag = ask_yes_no("Would you like to visualize the result? (Y/N)\n   -->  ")
+    verbose_flag = ask_yes_no("Would you like to execute with verbose mode (show all steps)? (Y/N)\n   -->  ")
 
     data_dir = Path("src/data/pictures")
     output_csv = Path(f"output/statistics/{method}_measurement_results.csv")
@@ -48,6 +79,8 @@ def main():
     non_numeric_stem_files = [f for f in data_dir.glob("*.ply") if not f.stem.isdigit()]
 
     ply_files = sorted(numeric_stem_files, key=lambda x: int(x.stem)) + sorted(non_numeric_stem_files)
+    # Ask user which files to run
+    ply_files = ask_file_selection(ply_files)
 
     if not ply_files:
         print("No .ply files found.")
@@ -112,6 +145,16 @@ def run_ml_benchmark(csv_path: Path):
     # csv_path = Path(r"output\statistics\AABB_measurement_results.csv")
 
     X, y = load_data_from_csv(csv_path, target_column="is_accurate")
+
+    # minimum dataset check
+    if X is None or y is None:
+        return
+
+    if len(X) < 5:
+        print("\nNot enough samples to run ML benchmark.")
+        print(f"Current samples: {len(X)}")
+        print("Run the program on more objects before benchmarking.\n")
+        return
     
     if X is not None and y is not None:
         print("\n" + "="*40)
@@ -152,8 +195,11 @@ def run_ml_benchmark(csv_path: Path):
         else:
             model, _, _ = train_mlp(X, y, verbose=False)
 
-        joblib.dump(model, 'output/models/best_model.joblib')
-        print(f"Saved best model: {best_model_name}")
+        model_path = Path("output/models/best_model.joblib")
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+
+        joblib.dump(model, model_path)
+        print(f"Saved best model: {best_model_name} -> {model_path}")
 
 
 def compare_between_csv(created_csv: Path, reference_csv: Path):
