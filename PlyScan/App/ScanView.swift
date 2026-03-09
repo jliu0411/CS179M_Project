@@ -93,21 +93,29 @@ struct ScanView: View {
                         .cornerRadius(8)
                 }
 
-                Button(action: {
-                    if isScanning {
-                        // Stop and upload
+                HStack(spacing: 16) {
+                    Button(action: {
+                        isScanning = true
+                        sessionManager.setScanning(true)
+                    }) {
+                        Text("Start Scan")
+                            .padding()
+                            .background(isScanning ? Color.gray.opacity(0.3) : Color.green.opacity(0.7))
+                            .cornerRadius(10)
+                    }
+                    .disabled(isScanning)
+                    
+                    Button(action: {
                         isScanning = false
                         sessionManager.setScanning(false)
                         uploadScan()
-                    } else {
-                        isScanning = true
-                        sessionManager.setScanning(true)
+                    }) {
+                        Text("Stop & Upload")
+                            .padding()
+                            .background(isScanning ? Color.red.opacity(0.7) : Color.gray.opacity(0.3))
+                            .cornerRadius(10)
                     }
-                }) {
-                    Text(isScanning ? "Stop & Upload" : "Start Scan")
-                        .padding()
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(10)
+                    .disabled(!isScanning)
                 }
                 .padding()
             }
