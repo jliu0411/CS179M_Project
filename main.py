@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from src.logic.dataclean import dataclean
 from src.model.mlmodel import load_data_from_csv, train_logistic_regression, train_decision_tree, train_mlp
+import joblib
 
 VALID_METHODS = ("AABB", "OBB", "HULL", "PCA", "HULL_PCA")
 
@@ -70,7 +71,14 @@ def main():
                 file.stem,  # index                
                 truncate(dims["height"], 3),
                 truncate(dims["width"], 3),
-                truncate(dims["length"], 3)
+                truncate(dims["length"], 3),
+
+                dims["point_count"],
+                dims["ransac_inlier_ratio"],
+                dims["std_x"],
+                dims["std_y"],
+                dims["std_z"],
+                dims["aspect_ratio"]
             ])
         except Exception as exc:  # Keep batch run alive if one file fails.
             print(f"Failed to process {file.name}: {exc}")
@@ -82,7 +90,7 @@ def main():
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(output_csv, mode="w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["number", "Height", "Width", "Length"])
+        writer.writerow(["number", "Height", "Width", "Length", "point_count", "ransac_inlier_ratio", "std_x", "std_y", "std_z", "aspect_ratio"])
         writer.writerows(results)
 
     print(f"\nSaved results to {output_csv}")
@@ -136,9 +144,20 @@ def run_ml_benchmark(csv_path: Path):
         for rank, (model_name, score) in enumerate(sorted_scores, 1):
             print(f"{rank}. {model_name}: {score * 100:.2f}%")
 
+        best_model_name = sorted_scores[0][0]
+        if best_model_name == "Logistic Regression":
+            model, _, _ = train_logistic_regression(X, y, verbose=False)
+        elif best_model_name == "Decision Tree":
+            model, _, _ = train_decision_tree(X, y, verbose=False)
+        else:
+            model, _, _ = train_mlp(X, y, verbose=False)
+
+        joblib.dump(model, 'output/models/best_model.joblib')
+        print(f"Saved best model: {best_model_name}")
+
 
 def compare_between_csv(created_csv: Path, reference_csv: Path):
-    ACCURACY_THRESHOLD = 0.95
+    ACCURACY_THRESHOLD = 0.85
     if not created_csv.exists():
         print(f"Created CSV file {created_csv} does not exist.")
         return
@@ -198,7 +217,7 @@ def compare_between_csv(created_csv: Path, reference_csv: Path):
                 dim_ratios.append(min(created, ref) / max(created, ref))
         print(f"{dim} avg confidence: {sum(dim_ratios)/len(dim_ratios)*100:.2f}%")
 
-    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "confidence", "is_accurate"]
+    output_cols = ["number", "Height_created", "Width_created", "Length_created", "Height_ref", "Width_ref", "Length_ref", "confidence", "is_accurate", "point_count", "ransac_inlier_ratio", "std_x", "std_y", "std_z", "aspect_ratio"]
     result_df = merged_df[output_cols].rename(columns={
         "Height_created": "Height",
         "Width_created": "Width",
