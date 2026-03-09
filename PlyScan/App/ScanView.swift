@@ -53,9 +53,12 @@ struct ScanView: View {
                         }
                     }
                 )) {
-                    Text("LiDAR").tag(ARSessionManager.ScanMode.lidar)
-                    Text("TrueDepth").tag(ARSessionManager.ScanMode.trueDepth)
-                    Text("RGB").tag(ARSessionManager.ScanMode.rgb)
+                    Text(sessionManager.isLiDARAvailable ? "LiDAR" : "LiDAR ❌")
+                        .tag(ARSessionManager.ScanMode.lidar)
+                    Text(sessionManager.isTrueDepthAvailable ? "TrueDepth" : "TrueDepth ❌")
+                        .tag(ARSessionManager.ScanMode.trueDepth)
+                    Text("RGB")
+                        .tag(ARSessionManager.ScanMode.rgb)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -202,3 +205,4 @@ struct ScanView: View {
         }
     }
 }
+

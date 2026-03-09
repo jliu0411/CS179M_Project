@@ -38,6 +38,8 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var heightCoverage: Int = 0
     @Published var currentTransform: simd_float4x4?
     @Published var scanMode: ScanMode = .rgb
+    @Published var isLiDARAvailable: Bool = false
+    @Published var isTrueDepthAvailable: Bool = false
     
     // MARK: - Frame Metadata
     struct CaptureFrame: Codable {
@@ -397,26 +399,39 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     // MARK: - Detect Mode
     func detectScanMode() {
         
-        if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+        // Check LiDAR availability
+        isLiDARAvailable = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+        
+        // Check TrueDepth availability
+        isTrueDepthAvailable = AVCaptureDevice.default(.builtInTrueDepthCamera,
+                                                        for: .video,
+                                                        position: .front) != nil
+        
+        // Auto-select best available mode
+        if isLiDARAvailable {
             scanMode = .lidar
             print("Using LiDAR mode")
-            return
-        }
-        
-        if AVCaptureDevice.default(.builtInTrueDepthCamera,
-                                   for: .video,
-                                   position: .front) != nil {
+        } else if isTrueDepthAvailable {
             scanMode = .trueDepth
             print("Using TrueDepth mode")
-            return
+        } else {
+            scanMode = .rgb
+            print("Using RGB mode")
         }
-        
-        scanMode = .rgb
-        print("Using RGB mode")
     }
     
     // MARK: - Change Mode
     func changeScanMode(to newMode: ScanMode) {
+        // Safety check: prevent switching to unavailable modes
+        if newMode == .lidar && !isLiDARAvailable {
+            print("⚠️ Cannot switch to LiDAR: not available on this device")
+            return
+        }
+        if newMode == .trueDepth && !isTrueDepthAvailable {
+            print("⚠️ Cannot switch to TrueDepth: not available on this device")
+            return
+        }
+        
         scanMode = newMode
         print("Switching to \(newMode) mode")
         
