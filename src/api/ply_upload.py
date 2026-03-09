@@ -35,9 +35,13 @@ async def health_check():
     return {"status": "ok", "message": "Server is running"}
 
 @app.post("/api/upload-ply")
-async def upload_ply(file: UploadFile = File(...)):
+async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
     """
     Upload a PLY file, process it, and return dimensions
+    
+    Args:
+        file: The PLY file to upload
+        method: Processing method - "AABB" (fast) or "HULL" (accurate, slow)
     """
     # Validate file extension
     if not file.filename.endswith('.ply'):
@@ -58,13 +62,21 @@ async def upload_ply(file: UploadFile = File(...)):
     
     # Process the PLY file
     try:
-        # Use HULL method by default (you can make this configurable)
+        import time
+        start_time = time.time()
+        print(f"⏱️  Processing {original_filename} with {method} method...")
+        
+        # Use AABB (fast) by default, or HULL (accurate but slower)
         dimensions = dataclean(
             str(file_path),
             visualize_flag=False,
-            method="HULL",
+            method=method,
             verbose=False
         )
+        
+        elapsed = time.time() - start_time
+        print(f"✅ Processing complete in {elapsed:.2f}s")
+        print(f"   Dimensions: {dimensions['width']:.3f} x {dimensions['length']:.3f} x {dimensions['height']:.3f} m")
         
         # Create cleaned filename
         cleaned_filename = f"{file_id}_cleaned.ply"
@@ -77,7 +89,8 @@ async def upload_ply(file: UploadFile = File(...)):
                 "width": float(dimensions["width"]),
                 "length": float(dimensions["length"]),
                 "height": float(dimensions["height"])
-            }
+            },
+            "processing_time": round(elapsed, 2)
         })
     
     except Exception as e:

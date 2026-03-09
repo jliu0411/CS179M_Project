@@ -414,5 +414,20 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
         scanMode = .rgb
         print("Using RGB mode")
     }
+    
+    // MARK: - Change Mode
+    func changeScanMode(to newMode: ScanMode) {
+        scanMode = newMode
+        print("Switching to \(newMode) mode")
+        
+        // Restart session with new configuration
+        if newMode == .trueDepth {
+            session.pause()
+            trueDepthScanner.start()
+        } else {
+            trueDepthScanner.stop()
+            startSession()
+        }
+    }
 }
 

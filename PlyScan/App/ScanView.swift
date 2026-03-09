@@ -44,16 +44,22 @@ struct ScanView: View {
             }
 
             VStack {
-                Text({
-                    switch sessionManager.scanMode {
-                    case .lidar: return "Mode: LiDAR"
-                    case .trueDepth: return "Mode: TrueDepth"
-                    case .rgb: return "Mode: RGB"
+                // Mode Selector
+                Picker("Scan Mode", selection: Binding(
+                    get: { sessionManager.scanMode },
+                    set: { newMode in
+                        if !isScanning {
+                            sessionManager.changeScanMode(to: newMode)
+                        }
                     }
-                }())
-                .padding(6)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
+                )) {
+                    Text("LiDAR").tag(ARSessionManager.ScanMode.lidar)
+                    Text("TrueDepth").tag(ARSessionManager.ScanMode.trueDepth)
+                    Text("RGB").tag(ARSessionManager.ScanMode.rgb)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .disabled(isScanning)
                 
                 Spacer()
                 
@@ -152,7 +158,7 @@ struct ScanView: View {
         
         NSLog("✅ PLY file exists, starting upload...")
         
-        uploadMessage = "Uploading..."
+        uploadMessage = "Uploading and processing...\nThis may take 5-15 seconds."
         showingUploadStatus = true
         
         UploadService.shared.uploadPLY(fileURL: plyURL, scanMode: sessionManager.scanMode) { result in

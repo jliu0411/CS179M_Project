@@ -79,7 +79,7 @@ class UploadService {
         NSLog("✅ Found file at: %@", fileURL.path)
         
         // Prepare the request
-        guard let url = URL(string: "\(baseURL)/api/upload-ply") else {
+        guard let url = URL(string: "\(baseURL)/api/upload-ply?method=AABB") else {
             NSLog("❌ Invalid URL: %@/api/upload-ply", baseURL)
             completion(.failure(.invalidURL))
             return
@@ -89,7 +89,7 @@ class UploadService {
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 60
+        request.timeoutInterval = 120  // Increased to 2 minutes for processing time
         
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
