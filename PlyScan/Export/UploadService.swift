@@ -53,16 +53,6 @@ enum UploadError: Error, LocalizedError {
 class UploadService {
     static let shared = UploadService()
     
-    // Backend server URL - update this with your server address
-    private var baseURL: String {
-        // Try to read from server-auto.ts if available, otherwise use default
-        #if DEBUG
-        return "http://192.168.1.47:8000"  // Your Mac's IP address
-        #else
-        return "https://cs179m-project-test.onrender.com"
-        #endif
-    }
-    
     private init() {}
     
     func uploadPLY(fileURL: URL, scanMode: ARSessionManager.ScanMode, completion: @escaping (Result<UploadResponse, UploadError>) -> Void) {
@@ -78,27 +68,37 @@ class UploadService {
         
         NSLog("✅ Found file at: %@", fileURL.path)
         
-        // Prepare the request
-        guard let url = URL(string: "\(baseURL)/api/upload-ply?method=AABB") else {
-            NSLog("❌ Invalid URL: %@/api/upload-ply", baseURL)
-            completion(.failure(.invalidURL))
-            return
-        }
-        
-        NSLog("📡 Uploading to: %@", url.absoluteString)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 120  // Increased to 2 minutes for processing time
-        
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        // Create multipart body
-        let body = createMultipartBody(fileURL: fileURL, boundary: boundary)
-        
-        // Upload task
-        let task = URLSession.shared.uploadTask(with: request, from: body) { data, response, error in
+        // Discover server URL
+        ServerDiscovery.shared.getServerURL { [weak self] baseURL in
+            guard let self = self, let baseURL = baseURL else {
+                NSLog("❌ Could not find server on network")
+                completion(.failure(.invalidURL))
+                return
+            }
+            
+            NSLog("🌐 Using server: %@", baseURL)
+            
+            // Prepare the request
+            guard let url = URL(string: "\(baseURL)/api/upload-ply?method=AABB") else {
+                NSLog("❌ Invalid URL: %@/api/upload-ply", baseURL)
+                completion(.failure(.invalidURL))
+                return
+            }
+            
+            NSLog("📡 Uploading to: %@", url.absoluteString)
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 120  // Increased to 2 minutes for processing time
+            
+            let boundary = UUID().uuidString
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            
+            // Create multipart body
+            let body = self.createMultipartBody(fileURL: fileURL, boundary: boundary)
+            
+            // Upload task
+            let task = URLSession.shared.uploadTask(with: request, from: body) { data, response, error in
             
             if let error = error {
                 NSLog("❌ Network error: %@", error.localizedDescription)
@@ -163,30 +163,31 @@ class UploadService {
         }
         
         task.resume()
-    }
-    
-    private func createMultipartBody(fileURL: URL, boundary: String) -> Data {
-        var body = Data()
-        
-        let filename = fileURL.lastPathComponent
-        let mimetype = "application/octet-stream"
-        
-        // Add file data
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimetype)\r\n\r\n".data(using: .utf8)!)
-        
-        if let fileData = try? Data(contentsOf: fileURL) {
-            NSLog("📦 File size: %d bytes", fileData.count)
-            body.append(fileData)
-        } else {
-            NSLog("❌ Failed to read file data")
+            }
         }
-        
-        body.append("\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        
-        NSLog("📤 Total upload size: %d bytes", body.count)
-        return body
-    }
+    
+        private func createMultipartBody(fileURL: URL, boundary: String) -> Data {
+            var body = Data()
+            
+            let filename = fileURL.lastPathComponent
+            let mimetype = "application/octet-stream"
+            
+            // Add file data
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(mimetype)\r\n\r\n".data(using: .utf8)!)
+            
+            if let fileData = try? Data(contentsOf: fileURL) {
+                NSLog("📦 File size: %d bytes", fileData.count)
+                body.append(fileData)
+            } else {
+                NSLog("❌ Failed to read file data")
+            }
+            
+            body.append("\r\n".data(using: .utf8)!)
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            
+            NSLog("📤 Total upload size: %d bytes", body.count)
+            return body
+        }
 }
