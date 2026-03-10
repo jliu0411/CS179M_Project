@@ -12,9 +12,31 @@ PlyScan is a comprehensive iOS app that combines 3D scanning with automated proc
    source venv310/bin/activate
    ```
 
-2. **Start the backend server:**
+2. **Install dependencies:**
+   ```bash
+   pip install fastapi uvicorn open3d numpy pandas
+   ```
+   
+   **Required packages:**
+   - `fastapi` - Web framework for the API
+   - `uvicorn` - ASGI server to run FastAPI
+   - `open3d` - Point cloud processing library
+   - `numpy` - Numerical computing
+   - `pandas` - Data processing
+
+3. **Start the backend server:**
    ```bash
    python -m uvicorn src.api.ply_upload:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+   **Verify server is running:**
+   ```bash
+   # Check your Mac's IP address
+   ifconfig | grep "inet " | grep -v 127.0.0.1
+   
+   # Test the health endpoint
+   curl http://localhost:8000/api/health
+   # Should return: {"status":"ok","message":"Server is running"}
    ```
 
 ### iOS App Setup
