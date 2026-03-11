@@ -18,6 +18,13 @@ def load_data_from_csv(csv_path, target_column):
     # Separate features (X) and the label we want to predict (y)
     X = df[['Height', 'Length', 'Width']]
 
+    feature_cols = ['point_count', 'ransac_inlier_ratio', 'std_x', 'std_y', 'std_z', 'aspect_ratio']
+
+    missing = [col for col in feature_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing expected feature columns in CSV: {missing}")
+    
+    X = df[feature_cols]
     y = df[target_column]
 
     return X, y

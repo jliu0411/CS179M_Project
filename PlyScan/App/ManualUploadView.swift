@@ -55,6 +55,15 @@ struct ManualUploadView: View {
                                         .font(.subheadline)
                                         .foregroundColor(.green)
                                     Spacer()
+                                    
+                                    Button(action: {
+                                        searchForServer()
+                                    }) {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                    }
+                                    .disabled(serverDiscovery.isSearching)
                                 }
                                 
                                 Text(serverURL)
@@ -76,6 +85,23 @@ struct ManualUploadView: View {
                                     Text("Not Connected")
                                         .font(.subheadline)
                                         .foregroundColor(.red)
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        searchForServer()
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.clockwise")
+                                            Text("Retry")
+                                        }
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(6)
+                                    }
+                                    .disabled(serverDiscovery.isSearching)
                                 }
                                 
                                 Text("Make sure your Mac server is running")
@@ -207,6 +233,92 @@ struct ManualUploadView: View {
                                 MeasurementCard(label: "Length", value: result.dimensions.length, color: .green)
                                 MeasurementCard(label: "Height", value: result.dimensions.height, color: .orange)
                                 
+                                // Confidence Score (reference-based) - prioritize this if available
+                                if let confidence = result.confidence {
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                    
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .foregroundColor(.green)
+                                            Text("Confidence Score")
+                                                .font(.headline)
+                                            Spacer()
+                                            Text("\(Int(confidence))%")
+                                                .font(.title3)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(qualityColor(for: confidence))
+                                        }
+                                        
+                                        Text("Based on comparison with reference measurements")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .italic()
+                                    }
+                                }
+                                
+                                // Quality Metrics (scan quality estimate)
+                                if let metrics = result.qualityMetrics {
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                    
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        // Only show quality score header if no confidence available
+                                        if result.confidence == nil {
+                                            HStack {
+                                                Image(systemName: "chart.bar.fill")
+                                                    .foregroundColor(.purple)
+                                                Text("Quality Score")
+                                                    .font(.headline)
+                                                Spacer()
+                                                Text("\(Int(metrics.qualityScore))%")
+                                                    .font(.title3)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(qualityColor(for: metrics.qualityScore))
+                                            }
+                                        } else {
+                                            Text("Scan Quality Details")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            HStack {
+                                                Text("Point Count:")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                                Text("\(metrics.pointCount)")
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                            }
+                                            
+                                            HStack {
+                                                Text("RANSAC Quality:")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                                Text(String(format: "%.1f%%", (1.0 - metrics.ransacInlierRatio) * 100))
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                            }
+                                            
+                                            HStack {
+                                                Text("Aspect Ratio:")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                                Text(String(format: "%.2f", metrics.aspectRatio))
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                            }
+                                        }
+                                        .padding(.top, 4)
+                                    }
+                                }
+                                
                                 Button(action: {
                                     saveToLibrary(result: result)
                                 }) {
@@ -231,18 +343,27 @@ struct ManualUploadView: View {
                 DocumentPicker(selectedURL: $selectedFileURL)
             }
             .onAppear {
-                // Trigger network permission prompt on first view
-                if !hasRequestedNetworkPermission {
-                    hasRequestedNetworkPermission = true
-                    // This will trigger the local network permission prompt
+                // Initial attempt to trigger permission dialog (doesn't set retry flag)
+                if serverDiscovery.discoveredServerURL == nil {
                     serverDiscovery.getServerURL { url in
                         if let url = url {
-                            NSLog("✅ Server discovered: \(url)")
+                            NSLog("✅ Server discovered on first try: \(url)")
                         } else {
-                            NSLog("⚠️ No server found on local network")
+                            NSLog("⚠️ Waiting for permission or manual retry...")
                         }
                     }
                 }
+            }
+        }
+    }
+    
+    private func searchForServer() {
+        // Use retryDiscovery for manual searches to prevent duplicate auto-retries
+        serverDiscovery.retryDiscovery { url in
+            if let url = url {
+                NSLog("✅ Server discovered: \(url)")
+            } else {
+                NSLog("⚠️ No server found on local network")
             }
         }
     }
@@ -276,6 +397,16 @@ struct ManualUploadView: View {
         }
     }
     
+    private func qualityColor(for score: Double) -> Color {
+        if score >= 75 {
+            return .green
+        } else if score >= 50 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
     private func saveToLibrary(result: UploadResponse) {
         guard let fileURL = selectedFileURL else { return }
         
@@ -286,6 +417,15 @@ struct ManualUploadView: View {
                 height: result.dimensions.height,
                 length: result.dimensions.length
             ),
+            confidence: result.confidence,
+            qualityMetrics: result.qualityMetrics.map { metrics in
+                ScanRecord.QualityMetrics(
+                    pointCount: metrics.pointCount,
+                    ransacInlierRatio: metrics.ransacInlierRatio,
+                    aspectRatio: metrics.aspectRatio,
+                    qualityScore: metrics.qualityScore
+                )
+            },
             scanMode: "Manual Upload",
             localPath: fileURL.path
         )

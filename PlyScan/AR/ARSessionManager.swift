@@ -29,6 +29,8 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     
     private var capturedFrames: [CaptureFrame] = []
     private var accumulatedPoints: [SIMD3<Float>] = []
+    private var minPoint: SIMD3<Float>?
+    private var maxPoint: SIMD3<Float>?
     private var scanPositions: [SIMD3<Float>] = []
     private var heightLevels: Set<Int> = []
     
@@ -128,6 +130,8 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     private func resetScanState() {
         capturedFrames.removeAll()
         accumulatedPoints.removeAll()
+        minPoint = nil
+        maxPoint = nil
         scanPositions.removeAll()
         heightLevels.removeAll()
         
@@ -137,20 +141,15 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     private func finalizeScan() {
-
         saveCapturedData()
-
         guard let folder = scanFolderURL else { return }
-
         pointQueue.sync {
-
             fileService.savePLY(points: accumulatedPoints, to: folder)
+            if let dimensions = computeObjectDimensions() {
+                print("Estimated object dimensions (m): W=\(dimensions.x), H=\(dimensions.y), D=\(dimensions.z)")
+            }
         }
-
-        // Delete RGB photos after generating PLY
-        if scanMode == .rgb {
-            fileService.deleteImages(in: folder)
-        }
+        if scanMode == .rgb { fileService.deleteImages(in: folder) }
     }
     
     // MARK: - TrueDepth Processing
@@ -217,50 +216,141 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     
     // MARK: - LiDAR Processing
     private func processLidarFrame(_ frame: ARFrame) {
-
         guard let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth else {
             print("No LiDAR depth available")
             return
         }
 
         let transform = frame.camera.transform
-
-        let position = SIMD3<Float>(
-            transform.columns.3.x,
-            transform.columns.3.y,
-            transform.columns.3.z
-        )
-
-        scanPositions.append(position)
-
-        updateCoverage()
-
-        frameCount += 1
+        let cameraIntrinsics = frame.camera.intrinsics
+        let imageResolution = frame.camera.imageResolution
 
         let depthMap = depthData.depthMap
+        let confidenceMap = depthData.confidenceMap
 
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        if let confidenceMap {
+            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
+        }
+
+        defer {
+            if let confidenceMap {
+                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
+            }
+            CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
+        }
 
         let width = CVPixelBufferGetWidth(depthMap)
         let height = CVPixelBufferGetHeight(depthMap)
 
-        let base = CVPixelBufferGetBaseAddress(depthMap)!
+        guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return }
         let buffer = base.assumingMemoryBound(to: Float32.self)
 
-        for y in stride(from: 0, to: height, by: 4) {
-            for x in stride(from: 0, to: width, by: 4) {
+        let scaleX = Float(width) / Float(imageResolution.width)
+        let scaleY = Float(height) / Float(imageResolution.height)
 
-                let depth = buffer[y * width + x]
+        let fx = cameraIntrinsics[0][0] * scaleX
+        let fy = cameraIntrinsics[1][1] * scaleY
+        let cx = cameraIntrinsics[2][0] * scaleX
+        let cy = cameraIntrinsics[2][1] * scaleY
 
-                if depth == 0 { continue }
+        let depthRowStride = CVPixelBufferGetBytesPerRow(depthMap) / MemoryLayout<Float32>.size
+        var confidenceBuffer: UnsafeMutablePointer<UInt8>? = nil
+        var confidenceRowStride: Int = 0
+        if let confidenceMap,
+           let confidenceBase = CVPixelBufferGetBaseAddress(confidenceMap) {
+            confidenceBuffer = confidenceBase.assumingMemoryBound(to: UInt8.self)
+            confidenceRowStride = CVPixelBufferGetBytesPerRow(confidenceMap)
+        }
 
-                accumulatedPoints.append(
-                    SIMD3<Float>(Float(x), Float(y), depth)
-                )
+        var newPoints: [SIMD3<Float>] = []
+        newPoints.reserveCapacity((width / 3) * (height / 3))
+
+        for y in stride(from: 0, to: height, by: 3) {
+            for x in stride(from: 0, to: width, by: 3) {
+                if let confidenceBuffer {
+                    let confidenceIdx = y * confidenceRowStride + x
+                    let confidence = confidenceBuffer[confidenceIdx]
+                    if confidence == 0 { continue }
+                }
+
+                let depthIdx = y * depthRowStride + x
+                let depth = buffer[depthIdx]
+                if !depth.isFinite || depth <= 0.05 || depth > 5.0 { continue }
+
+                let cameraX = (Float(x) - cx) * depth / fx
+                let cameraY = -((Float(y) - cy) * depth / fy)
+                let cameraZ = -depth
+
+                let localPoint = SIMD4<Float>(cameraX, cameraY, cameraZ, 1)
+                let worldPoint = transform * localPoint
+                newPoints.append(SIMD3<Float>(worldPoint.x, worldPoint.y, worldPoint.z))
             }
         }
 
-        CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
+        pointQueue.async {
+            for point in newPoints { self.expandBoundingBox(with: point) }
+            self.accumulatedPoints.append(contentsOf: newPoints)
+            if self.accumulatedPoints.count > 1_500_000 {
+                self.accumulatedPoints.removeFirst(300_000)
+                self.recalculateBoundsFromAccumulatedPoints()
+            }
+        }
+
+        frameCount += 1
+    }
+    
+    private func expandBoundingBox(with point: SIMD3<Float>) {
+        if minPoint == nil || maxPoint == nil {
+            minPoint = point
+            maxPoint = point
+            return
+        }
+
+        minPoint = SIMD3<Float>(
+            Swift.min(minPoint!.x, point.x),
+            Swift.min(minPoint!.y, point.y),
+            Swift.min(minPoint!.z, point.z)
+        )
+
+        maxPoint = SIMD3<Float>(
+            Swift.max(maxPoint!.x, point.x),
+            Swift.max(maxPoint!.y, point.y),
+            Swift.max(maxPoint!.z, point.z)
+        )
+    }
+
+    private func recalculateBoundsFromAccumulatedPoints() {
+        guard let first = accumulatedPoints.first else {
+            minPoint = nil
+            maxPoint = nil
+            return
+        }
+
+        var localMin = first
+        var localMax = first
+
+        for point in accumulatedPoints.dropFirst() {
+            localMin = SIMD3<Float>(
+                Swift.min(localMin.x, point.x),
+                Swift.min(localMin.y, point.y),
+                Swift.min(localMin.z, point.z)
+            )
+
+            localMax = SIMD3<Float>(
+                Swift.max(localMax.x, point.x),
+                Swift.max(localMax.y, point.y),
+                Swift.max(localMax.z, point.z)
+            )
+        }
+
+        minPoint = localMin
+        maxPoint = localMax
+    }
+
+    private func computeObjectDimensions() -> SIMD3<Float>? {
+        guard let minPoint, let maxPoint else { return nil }
+        return maxPoint - minPoint
     }
     
     // MARK: - RGB Processing

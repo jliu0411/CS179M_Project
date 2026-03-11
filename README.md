@@ -1,7 +1,7 @@
-# Project Progress – Dimensioner & Pivot Exploration
+# Dimensioner
 
 ## Overview
-This project explores camera-based **Dimensioner systems** and potential pivots if access to hardware, meetings, or datasets becomes unavailable. Our goal is to deliver a practical, computer-vision–driven solution within a limited timeline.
+This project explores camera-based **Dimensioner systems**. Our goal is to deliver a practical, computer-vision–driven solution within a limited timeline.
 
 ---
 

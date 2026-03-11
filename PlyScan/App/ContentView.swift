@@ -9,7 +9,7 @@ import SwiftUI
 import ARKit
 import RealityKit
 
-struct ScanningARViewContainer: UIViewRepresentable {
+struct ContentARViewContainer: UIViewRepresentable {
 
     let sessionManager: ARSessionManager
 
@@ -37,7 +37,7 @@ struct ContentView: View {
 
             } else {
 
-                ScanningARViewContainer(sessionManager: sessionManager)
+                ContentARViewContainer(sessionManager: sessionManager)
                     .edgesIgnoringSafeArea(.all)
             }
 

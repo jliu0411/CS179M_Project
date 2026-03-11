@@ -12,6 +12,8 @@ struct UploadResponse: Codable {
     let originalFilename: String
     let cleanedFilename: String
     let dimensions: Dimensions
+    let qualityMetrics: QualityMetrics?
+    let confidence: Double?  // Reference-based confidence (0-100)
     
     struct Dimensions: Codable {
         let width: Double
@@ -19,11 +21,39 @@ struct UploadResponse: Codable {
         let height: Double
     }
     
+    struct QualityMetrics: Codable {
+        let pointCount: Int
+        let ransacInlierRatio: Double
+        let aspectRatio: Double
+        
+        enum CodingKeys: String, CodingKey {
+            case pointCount = "point_count"
+            case ransacInlierRatio = "ransac_inlier_ratio"
+            case aspectRatio = "aspect_ratio"
+        }
+        
+        // Calculate a simple quality score (0-100)
+        var qualityScore: Double {
+            // Higher point count = better (normalize to 10k points)
+            let pointScore = min(Double(pointCount) / 10000.0, 1.0) * 100
+            
+            // Lower RANSAC ratio = cleaner object detection (less floor)
+            let ransacScore = (1.0 - ransacInlierRatio) * 100
+            
+            // Aspect ratio around 1.5-3.0 is typical for boxes
+            let aspectScore = aspectRatio >= 1.0 && aspectRatio <= 5.0 ? 100.0 : 50.0
+            
+            return (pointScore * 0.4 + ransacScore * 0.4 + aspectScore * 0.2)
+        }
+    }
+    
     enum CodingKeys: String, CodingKey {
         case success
         case originalFilename = "original_filename"
         case cleanedFilename = "cleaned_filename"
         case dimensions
+        case qualityMetrics = "quality_metrics"
+        case confidence
     }
 }
 

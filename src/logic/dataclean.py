@@ -249,8 +249,25 @@ def dataclean(dir:str,
     
     filename = dir.split('/')[-1]
 
+    # Calculate quality metrics
+    final_points = np.asarray(pcd_target.points)
+    point_count = len(final_points)
+    
+    # RANSAC inlier ratio
+    total_points_before_ransac = len(np.asarray(pcd_histogram.points))
+    ransac_inlier_ratio = len(inliers) / total_points_before_ransac if total_points_before_ransac > 0 else 0
+    
+    # Standard deviations along each axis
+    std_x = float(np.std(final_points[:, 0]))
+    std_y = float(np.std(final_points[:, 1]))
+    std_z = float(np.std(final_points[:, 2]))
+    
+    # Aspect ratio (max dimension / min dimension)
+    dims_array = np.array([width, length, height])
+    aspect_ratio = float(np.max(dims_array) / np.min(dims_array)) if np.min(dims_array) > 0 else 0
+
     if verbose:
-        print(f"{method} dimensions of {filename}:")
+        print(f"\n{method} dimensions of {filename}:")
         print(f"Width:  {width:.3f}")
         print(f"Length: {length:.3f}")
         print(f"Height: {height:.3f}")
@@ -263,9 +280,15 @@ def dataclean(dir:str,
     if visualize_flag:
         o3d.visualization.draw_geometries(geometry_to_show)
 
-    # Return dimensions for batch processing
+    # Return dimensions and quality metrics for batch processing
     return {
         'width': float(width),
         'length': float(length),
-        'height': float(height)
+        'height': float(height),
+        'point_count': point_count,
+        'ransac_inlier_ratio': float(ransac_inlier_ratio),
+        'std_x': std_x,
+        'std_y': std_y,
+        'std_z': std_z,
+        'aspect_ratio': aspect_ratio
     }

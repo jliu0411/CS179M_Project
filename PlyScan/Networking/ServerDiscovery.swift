@@ -20,11 +20,59 @@ class ServerDiscovery: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "cachedServerIP") }
     }
     
+    private var pathMonitor: NWPathMonitor?
+    private let monitorQueue = DispatchQueue(label: "NetworkMonitor")
+    private var hasTriedAfterPermission = false
+    private var previousNetworkStatus: NWPath.Status = .unsatisfied
+    
     private init() {
         // Try cached IP first
         if let cached = cachedIP {
             discoveredServerURL = "http://\(cached):\(port)"
         }
+        
+        // Set up network monitoring to detect when permission is granted
+        setupNetworkMonitoring()
+    }
+    
+    private func setupNetworkMonitoring() {
+        pathMonitor = NWPathMonitor()
+        
+        pathMonitor?.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            
+            NSLog("📡 Network status: \(path.status) (previous: \(self.previousNetworkStatus))")
+            
+            // Detect when network transitions from unsatisfied -> satisfied
+            // This indicates permission was just granted
+            if path.status == .satisfied && 
+               self.previousNetworkStatus != .satisfied && 
+               self.discoveredServerURL == nil && 
+               !self.hasTriedAfterPermission {
+                
+                NSLog("🔄 Permission granted! Network transitioned to satisfied. Retrying server discovery...")
+                self.hasTriedAfterPermission = true
+                
+                // Wait a bit to ensure permission is fully applied
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.getServerURL { url in
+                        if url != nil {
+                            NSLog("✅ Server found after permission grant: \(url)")
+                        } else {
+                            NSLog("❌ Still no server found after permission grant")
+                        }
+                    }
+                }
+            }
+            
+            // Track previous state for next invocation
+            self.previousNetworkStatus = path.status
+        }
+        pathMonitor?.start(queue: monitorQueue)
+    }
+    
+    deinit {
+        pathMonitor?.cancel()
     }
     
     // Get current server URL or trigger discovery
@@ -50,6 +98,13 @@ class ServerDiscovery: ObservableObject {
         
         // No cache, try common servers
         tryCommonServers(completion: completion)
+    }
+    
+    // Manual retry (resets the auto-retry flag)
+    func retryDiscovery(completion: @escaping (String?) -> Void) {
+        NSLog("🔄 Manual retry triggered")
+        hasTriedAfterPermission = true  // Prevent duplicate auto-retry
+        getServerURL(completion: completion)
     }
     
     // Try common server locations before full network scan

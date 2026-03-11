@@ -12,15 +12,31 @@ import RealityKit
 struct ARViewContainer: UIViewRepresentable {
 
     let sessionManager: ARSessionManager
+    let isActive: Bool
 
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
         arView.session = sessionManager.session
-        sessionManager.startSession()
+        if isActive {
+            sessionManager.startSession()
+        }
         return arView
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {}
+    func updateUIView(_ uiView: ARView, context: Context) {
+        guard isActive else { return }
+        if let frame = sessionManager.session.currentFrame {
+            switch frame.camera.trackingState {
+            case .normal:
+                break
+            default:
+                sessionManager.startSession()
+            }
+        } else {
+            // No frame yet; ensure session is running
+            sessionManager.startSession()
+        }
+    }
 }
 
 struct ScanView: View {
@@ -29,6 +45,7 @@ struct ScanView: View {
     @State private var isScanning = false
     @State private var showingUploadStatus = false
     @State private var uploadMessage = ""
+    @State private var isViewActive = false
 
     var body: some View {
         ZStack {
@@ -39,7 +56,7 @@ struct ScanView: View {
 
             } else {
 
-                ARViewContainer(sessionManager: sessionManager)
+                ARViewContainer(sessionManager: sessionManager, isActive: isViewActive)
                     .edgesIgnoringSafeArea(.all)
             }
 
@@ -129,6 +146,16 @@ struct ScanView: View {
                 .padding()
             }
         }
+        .onAppear {
+            isViewActive = true
+        }
+        .onDisappear {
+            isViewActive = false
+            if isScanning {
+                isScanning = false
+                sessionManager.setScanning(false)
+            }
+        }
         .alert("Upload Status", isPresented: $showingUploadStatus) {
             Button("OK") { }
         } message: {
@@ -168,13 +195,34 @@ struct ScanView: View {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let response):
-                    uploadMessage = """
+                    var message = """
                     ✅ Upload Successful!
                     
                     Width: \(String(format: "%.3f", response.dimensions.width)) m
                     Length: \(String(format: "%.3f", response.dimensions.length)) m
                     Height: \(String(format: "%.3f", response.dimensions.height)) m
                     """
+                    
+                    // Add confidence score if available (reference-based)
+                    if let confidence = response.confidence {
+                        message += """
+                        
+                        
+                        Confidence: \(Int(confidence))%
+                        (compared to reference measurements)
+                        """
+                    }
+                    // Otherwise show quality metrics
+                    else if let metrics = response.qualityMetrics {
+                        message += """
+                        
+                        
+                        Quality Score: \(Int(metrics.qualityScore))%
+                        Point Count: \(metrics.pointCount)
+                        """
+                    }
+                    
+                    uploadMessage = message
                     
                     // Save to library
                     let record = ScanRecord(
@@ -184,6 +232,15 @@ struct ScanView: View {
                             height: response.dimensions.height,
                             length: response.dimensions.length
                         ),
+                        confidence: response.confidence,
+                        qualityMetrics: response.qualityMetrics.map { metrics in
+                            ScanRecord.QualityMetrics(
+                                pointCount: metrics.pointCount,
+                                ransacInlierRatio: metrics.ransacInlierRatio,
+                                aspectRatio: metrics.aspectRatio,
+                                qualityScore: metrics.qualityScore
+                            )
+                        },
                         scanMode: {
                             switch sessionManager.scanMode {
                             case .lidar: return "LiDAR"

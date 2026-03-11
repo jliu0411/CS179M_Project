@@ -86,18 +86,31 @@ struct ScanRecordRow: View {
             
             Spacer()
             
-            if let dims = record.dimensions {
-                VStack(alignment: .trailing, spacing: 2) {
-                    dimensionText("W: \(String(format: "%.3f", dims.width))m")
-                    dimensionText("L: \(String(format: "%.3f", dims.length))m")
-                    dimensionText("H: \(String(format: "%.3f", dims.height))m")
-                }
-                .font(.caption)
-                .foregroundColor(.secondary)
-            } else {
-                Text("Processing...")
+            VStack(alignment: .trailing, spacing: 4) {
+                if let dims = record.dimensions {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        dimensionText("W: \(String(format: "%.3f", dims.width))m")
+                        dimensionText("L: \(String(format: "%.3f", dims.length))m")
+                        dimensionText("H: \(String(format: "%.3f", dims.height))m")
+                    }
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.secondary)
+                } else {
+                    Text("Processing...")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                
+                if let confidence = record.confidence {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption2)
+                        Text("\(Int(confidence))%")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(qualityColor(for: confidence))
+                }
             }
         }
         .padding(.vertical, 4)
@@ -105,7 +118,7 @@ struct ScanRecordRow: View {
     
     private func dimensionText(_ text: String) -> some View {
         Text(text)
-            .font(.system(.caption, design: .monospaced))
+            .font(.system(.body, design: .monospaced))
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -121,6 +134,16 @@ struct ScanRecordRow: View {
         case "TrueDepth": return "camera.metering.matrix"
         case "RGB": return "camera"
         default: return "camera"
+        }
+    }
+    
+    private func qualityColor(for score: Double) -> Color {
+        if score >= 75 {
+            return .green
+        } else if score >= 50 {
+            return .orange
+        } else {
+            return .red
         }
     }
 }
@@ -143,6 +166,28 @@ struct ScanDetailView: View {
                         }
                     }
                     
+                    // Confidence Score
+                    if let confidence = record.confidence {
+                        GroupBox(label: Label("Confidence", systemImage: "checkmark.seal.fill")) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Measurement Accuracy")
+                                        .font(.headline)
+                                    Text("Compared to reference data")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Text("\(Int(confidence))%")
+                                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                                    .foregroundColor(qualityColor(for: confidence))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    
                     // Dimensions
                     if let dims = record.dimensions {
                         GroupBox(label: Label("Dimensions", systemImage: "ruler")) {
@@ -150,6 +195,18 @@ struct ScanDetailView: View {
                                 MeasurementCard(label: "Width", value: dims.width, color: .blue)
                                 MeasurementCard(label: "Length", value: dims.length, color: .green)
                                 MeasurementCard(label: "Height", value: dims.height, color: .orange)
+                            }
+                        }
+                    }
+                    
+                    // Quality Metrics
+                    if let metrics = record.qualityMetrics {
+                        GroupBox(label: Label("Scan Quality", systemImage: "chart.bar.fill")) {
+                            VStack(spacing: 8) {
+                                QualityMetricRow(label: "Point Count", value: "\(metrics.pointCount)")
+                                QualityMetricRow(label: "RANSAC Inlier Ratio", value: "\(String(format: "%.2f", metrics.ransacInlierRatio))")
+                                QualityMetricRow(label: "Aspect Ratio", value: "\(String(format: "%.2f", metrics.aspectRatio))")
+                                QualityMetricRow(label: "Overall Quality", value: "\(Int(metrics.qualityScore))%")
                             }
                         }
                     }
@@ -173,6 +230,34 @@ struct ScanDetailView: View {
         formatter.dateStyle = .full
         formatter.timeStyle = .medium
         return formatter.string(from: date)
+    }
+    
+    private func qualityColor(for score: Double) -> Color {
+        if score >= 75 {
+            return .green
+        } else if score >= 50 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+}
+
+struct QualityMetricRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+        }
     }
 }
 
