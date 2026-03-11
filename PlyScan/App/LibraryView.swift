@@ -173,7 +173,7 @@ struct ScanDetailView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Measurement Accuracy")
                                         .font(.headline)
-                                    Text("Compared to reference data")
+                                    Text("According to prediction model")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -195,18 +195,6 @@ struct ScanDetailView: View {
                                 MeasurementCard(label: "Width", value: dims.width, color: .blue)
                                 MeasurementCard(label: "Length", value: dims.length, color: .green)
                                 MeasurementCard(label: "Height", value: dims.height, color: .orange)
-                            }
-                        }
-                    }
-                    
-                    // Quality Metrics
-                    if let metrics = record.qualityMetrics {
-                        GroupBox(label: Label("Scan Quality", systemImage: "chart.bar.fill")) {
-                            VStack(spacing: 8) {
-                                QualityMetricRow(label: "Point Count", value: "\(metrics.pointCount)")
-                                QualityMetricRow(label: "RANSAC Inlier Ratio", value: "\(String(format: "%.2f", metrics.ransacInlierRatio))")
-                                QualityMetricRow(label: "Aspect Ratio", value: "\(String(format: "%.2f", metrics.aspectRatio))")
-                                QualityMetricRow(label: "Overall Quality", value: "\(Int(metrics.qualityScore))%")
                             }
                         }
                     }
@@ -239,24 +227,6 @@ struct ScanDetailView: View {
             return .orange
         } else {
             return .red
-        }
-    }
-}
-
-struct QualityMetricRow: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
         }
     }
 }

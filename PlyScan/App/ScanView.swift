@@ -175,17 +175,36 @@ struct ScanView: View {
         
         NSLog("📁 Scan folder: %@", scanFolder.path)
         
-        let plyURL = scanFolder.appendingPathComponent("sparse_cloud.ply")
+        let originalPLY = scanFolder.appendingPathComponent("sparse_cloud.ply")
         
-        NSLog("🔍 Checking for PLY at: %@", plyURL.path)
-        
-        guard FileManager.default.fileExists(atPath: plyURL.path) else {
+        // Check if original file exists
+        guard FileManager.default.fileExists(atPath: originalPLY.path) else {
             NSLog("❌ PLY file not found at path")
             uploadMessage = "PLY file not found"
             showingUploadStatus = true
             return
         }
         
+        // Generate unique filename with timestamp
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = dateFormatter.string(from: Date())
+        let uniqueFilename = "scan_\(timestamp).ply"
+        
+        let uniquePLY = scanFolder.appendingPathComponent(uniqueFilename)
+        
+        // Rename file to unique name
+        do {
+            try FileManager.default.moveItem(at: originalPLY, to: uniquePLY)
+            NSLog("✅ Renamed to: %@", uniqueFilename)
+        } catch {
+            NSLog("⚠️ Failed to rename file: %@", error.localizedDescription)
+            // Continue with original name if rename fails
+        }
+        
+        let plyURL = FileManager.default.fileExists(atPath: uniquePLY.path) ? uniquePLY : originalPLY
+        
+        NSLog("🔍 Using PLY file: %@", plyURL.lastPathComponent)
         NSLog("✅ PLY file exists, starting upload...")
         
         uploadMessage = "Uploading and processing...\nThis may take 5-15 seconds."
@@ -209,7 +228,7 @@ struct ScanView: View {
                         
                         
                         Confidence: \(Int(confidence))%
-                        (compared to reference measurements)
+                        (According to prediction model)
                         """
                     }
                     // Otherwise show quality metrics

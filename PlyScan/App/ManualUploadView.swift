@@ -251,71 +251,10 @@ struct ManualUploadView: View {
                                                 .foregroundColor(qualityColor(for: confidence))
                                         }
                                         
-                                        Text("Based on comparison with reference measurements")
+                                        Text("According to prediction model")
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
                                             .italic()
-                                    }
-                                }
-                                
-                                // Quality Metrics (scan quality estimate)
-                                if let metrics = result.qualityMetrics {
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        // Only show quality score header if no confidence available
-                                        if result.confidence == nil {
-                                            HStack {
-                                                Image(systemName: "chart.bar.fill")
-                                                    .foregroundColor(.purple)
-                                                Text("Quality Score")
-                                                    .font(.headline)
-                                                Spacer()
-                                                Text("\(Int(metrics.qualityScore))%")
-                                                    .font(.title3)
-                                                    .fontWeight(.bold)
-                                                    .foregroundColor(qualityColor(for: metrics.qualityScore))
-                                            }
-                                        } else {
-                                            Text("Scan Quality Details")
-                                                .font(.subheadline)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack {
-                                                Text("Point Count:")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                Spacer()
-                                                Text("\(metrics.pointCount)")
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                            }
-                                            
-                                            HStack {
-                                                Text("RANSAC Quality:")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                Spacer()
-                                                Text(String(format: "%.1f%%", (1.0 - metrics.ransacInlierRatio) * 100))
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                            }
-                                            
-                                            HStack {
-                                                Text("Aspect Ratio:")
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondary)
-                                                Spacer()
-                                                Text(String(format: "%.2f", metrics.aspectRatio))
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                            }
-                                        }
-                                        .padding(.top, 4)
                                     }
                                 }
                                 
