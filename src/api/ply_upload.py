@@ -8,7 +8,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
 import shutil
 import uuid
-from typing import Dict
+import pandas as pd
+import re
+from typing import Dict, Optional
 from src.logic.dataclean import dataclean
 
 app = FastAPI(title="PLY Processor API")
@@ -25,6 +27,71 @@ app.add_middleware(
 # Directories
 UPLOAD_DIR = Path("output/mobile_uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Reference measurements CSV
+REFERENCE_CSV = Path("Measurements_clean - Sheet1.csv")
+
+def calculate_confidence(dimensions: Dict, filename: str) -> Optional[float]:
+    """
+    Calculate confidence score by comparing against reference measurements.
+    Returns None if reference data is not available for this object.
+    
+    Args:
+        dimensions: Dict with 'width', 'length', 'height' in meters
+        filename: Original filename (e.g., "1.ply", "box2.ply")
+    
+    Returns:
+        Confidence score (0-100) or None if no reference available
+    """
+    # Try to extract object number from filename
+    match = re.search(r'\d+', filename)
+    if not match:
+        return None
+    
+    object_number = int(match.group())
+    
+    # Check if reference CSV exists
+    if not REFERENCE_CSV.exists():
+        return None
+    
+    try:
+        # Load reference measurements
+        reference_df = pd.read_csv(REFERENCE_CSV)
+        reference_df.columns = reference_df.columns.str.strip()
+        
+        # Find the reference row for this object
+        ref_row = reference_df[reference_df['number'] == object_number]
+        if ref_row.empty:
+            return None
+        
+        # Get reference dimensions (in cm)
+        ref_height = ref_row['Height'].values[0]
+        ref_width = ref_row['Width'].values[0]
+        ref_length = ref_row['Length'].values[0]
+        
+        # Convert our dimensions from meters to cm
+        created_height = dimensions['height'] * 100
+        created_width = dimensions['width'] * 100
+        created_length = dimensions['length'] * 100
+        
+        # Calculate ratios for each dimension (same as compare_between_csv)
+        ratios = []
+        for created, reference in [(created_height, ref_height), 
+                                    (created_width, ref_width), 
+                                    (created_length, ref_length)]:
+            if reference == 0:
+                ratios.append(0)
+            else:
+                ratio = min(created, reference) / max(created, reference)
+                ratios.append(ratio)
+        
+        # Average confidence across all dimensions
+        confidence = (sum(ratios) / len(ratios)) * 100
+        return round(confidence, 2)
+        
+    except Exception as e:
+        print(f"⚠️  Could not calculate confidence: {e}")
+        return None
 
 @app.get("/")
 async def root():
@@ -78,10 +145,15 @@ async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
         print(f"✅ Processing complete in {elapsed:.2f}s")
         print(f"   Dimensions: {dimensions['width']:.3f} x {dimensions['length']:.3f} x {dimensions['height']:.3f} m")
         
+        # Calculate confidence if reference data is available
+        confidence = calculate_confidence(dimensions, original_filename)
+        if confidence is not None:
+            print(f"   Confidence: {confidence:.1f}% (vs reference measurements)")
+        
         # Create cleaned filename
         cleaned_filename = f"{file_id}_cleaned.ply"
         
-        return JSONResponse(content={
+        response_data = {
             "success": True,
             "original_filename": original_filename,
             "cleaned_filename": cleaned_filename,
@@ -90,8 +162,19 @@ async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
                 "length": float(dimensions["length"]),
                 "height": float(dimensions["height"])
             },
+            "quality_metrics": {
+                "point_count": int(dimensions["point_count"]),
+                "ransac_inlier_ratio": float(dimensions["ransac_inlier_ratio"]),
+                "aspect_ratio": float(dimensions["aspect_ratio"])
+            },
             "processing_time": round(elapsed, 2)
-        })
+        }
+        
+        # Add confidence if available
+        if confidence is not None:
+            response_data["confidence"] = confidence
+        
+        return JSONResponse(content=response_data)
     
     except Exception as e:
         # Clean up uploaded file on error

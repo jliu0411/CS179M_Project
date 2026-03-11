@@ -52,6 +52,17 @@ def test_ply_upload():
             print(f"  Width:  {result['dimensions']['width']:.3f} m")
             print(f"  Length: {result['dimensions']['length']:.3f} m")
             print(f"  Height: {result['dimensions']['height']:.3f} m")
+            
+            if 'confidence' in result:
+                print(f"\nConfidence: {result['confidence']:.1f}%")
+                print("  (Based on reference measurements)")
+            
+            if 'quality_metrics' in result:
+                print(f"\nQuality Metrics:")
+                print(f"  Point count: {result['quality_metrics']['point_count']}")
+                print(f"  RANSAC inlier ratio: {result['quality_metrics']['ransac_inlier_ratio']:.3f}")
+                print(f"  Aspect ratio: {result['quality_metrics']['aspect_ratio']:.2f}")
+            
             return True
         else:
             print(f"❌ Upload failed: {response.status_code}")
