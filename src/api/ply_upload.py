@@ -10,6 +10,8 @@ import shutil
 import uuid
 import pandas as pd
 import re
+import joblib
+import numpy as np
 from typing import Dict, Optional
 from src.logic.dataclean import dataclean
 
@@ -30,6 +32,79 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Reference measurements CSV
 REFERENCE_CSV = Path("Measurements_clean - Sheet1.csv")
+
+# Load trained ML confidence model (produced by run_ml_benchmark in main.py)
+CONFIDENCE_MODEL_PATH = Path("output/models/best_model.joblib")
+confidence_model = None
+confidence_scaler = None
+
+def load_confidence_model():
+    """Load the trained classifier + scaler at startup."""
+    global confidence_model, confidence_scaler
+    if CONFIDENCE_MODEL_PATH.exists():
+        try:
+            data = joblib.load(CONFIDENCE_MODEL_PATH)
+            if isinstance(data, dict):
+                # Prefer proba_model (smooth probabilities) over best-accuracy model
+                if "proba_model" in data and "proba_scaler" in data:
+                    confidence_model = data["proba_model"]
+                    confidence_scaler = data["proba_scaler"]
+                    print(f"✅ Loaded confidence model ({data.get('proba_name', 'unknown')}) from {CONFIDENCE_MODEL_PATH}")
+                elif "model" in data and "scaler" in data:
+                    confidence_model = data["model"]
+                    confidence_scaler = data["scaler"]
+                    print(f"✅ Loaded ML model ({data.get('name', 'unknown')}) from {CONFIDENCE_MODEL_PATH}")
+                else:
+                    print(f"⚠️  Unexpected format in {CONFIDENCE_MODEL_PATH}")
+            else:
+                # Legacy format: just the model, no scaler
+                confidence_model = data
+                confidence_scaler = None
+                print(f"⚠️  Loaded model from {CONFIDENCE_MODEL_PATH} but no scaler found")
+                print(f"   Re-run main.py with ML benchmark to save model+scaler.")
+        except Exception as e:
+            print(f"⚠️  Failed to load confidence model: {e}")
+            confidence_model = None
+    else:
+        print(f"⚠️  No confidence model found at {CONFIDENCE_MODEL_PATH}")
+        print(f"   Run main.py → compare CSV → ML benchmark to generate one.")
+
+# Load model on import
+load_confidence_model()
+
+
+def predict_ml_confidence(dimensions: Dict) -> Optional[float]:
+    """
+    Predict confidence score using the trained regression model.
+    
+    Args:
+        dimensions: Dict with quality metrics from dataclean()
+    
+    Returns:
+        ML-predicted confidence score (0-100), or None if model not available
+    """
+    if confidence_model is None or confidence_scaler is None:
+        return None
+    
+    try:
+        features = np.array([[
+            dimensions.get('point_count', 0),
+            dimensions.get('ransac_inlier_ratio', 0),
+            dimensions.get('std_x', 0),
+            dimensions.get('std_y', 0),
+            dimensions.get('std_z', 0),
+            dimensions.get('aspect_ratio', 1),
+        ]])
+        
+        features_scaled = confidence_scaler.transform(features)
+        
+        # The proba_model is a regressor that predicts confidence % directly
+        prediction = confidence_model.predict(features_scaled)[0]
+        
+        return round(max(0.0, min(100.0, prediction)), 2)
+    except Exception as e:
+        print(f"⚠️  ML prediction failed: {e}")
+        return None
 
 def calculate_quality_confidence(dimensions: Dict) -> float:
     """
@@ -201,17 +276,21 @@ async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
         print(f"✅ Processing complete in {elapsed:.2f}s")
         print(f"   Dimensions: {dimensions['width']:.3f} x {dimensions['length']:.3f} x {dimensions['height']:.3f} m")
         
-        # Try reference-based confidence first (accurate)
-        confidence = calculate_confidence(dimensions, original_filename)
-        confidence_type = "reference"
+        # Confidence priority: ML model → reference-based → quality heuristic
+        confidence = predict_ml_confidence(dimensions)
+        confidence_type = "ml_model"
         
-        # Fall back to quality-based confidence if no reference available
         if confidence is None:
+            # Fall back to reference-based if ML model unavailable
+            confidence = calculate_confidence(dimensions, original_filename)
+            confidence_type = "reference"
+        
+        if confidence is None:
+            # Fall back to quality heuristic as last resort
             confidence = calculate_quality_confidence(dimensions)
             confidence_type = "quality"
-            print(f"   Confidence: {confidence:.1f}% (quality-based)")
-        else:
-            print(f"   Confidence: {confidence:.1f}% (vs reference measurements)")
+        
+        print(f"   Confidence: {confidence:.1f}% ({confidence_type})")
         
         # Create cleaned filename
         cleaned_filename = f"{file_id}_cleaned.ply"

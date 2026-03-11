@@ -3,6 +3,10 @@ import pandas as pd
 from pathlib import Path
 from src.logic.dataclean import dataclean
 from src.model.mlmodel import load_data_from_csv, train_logistic_regression, train_decision_tree, train_mlp
+from sklearn.preprocessing import StandardScaler
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 import joblib
 
 VALID_METHODS = ("AABB", "OBB", "HULL", "PCA", "HULL_PCA")
@@ -193,17 +197,57 @@ def run_ml_benchmark(csv_path: Path):
 
         best_model_name = sorted_scores[0][0]
         if best_model_name == "Logistic Regression":
-            model, _, _ = train_logistic_regression(X, y, verbose=False)
+            model, scaler, _ = train_logistic_regression(X, y, verbose=False)
         elif best_model_name == "Decision Tree":
-            model, _, _ = train_decision_tree(X, y, verbose=False)
+            model, scaler, _ = train_decision_tree(X, y, verbose=False)
         else:
-            model, _, _ = train_mlp(X, y, verbose=False)
+            model, scaler, _ = train_mlp(X, y, verbose=False)
+
+        # Also train a confidence regression model on ALL data for the backend API.
+        # The classifiers above predict binary is_accurate, but for the app we need
+        # a continuous confidence score (0-100%). We train a regressor on the
+        # actual confidence column produced by compare_between_csv.
+        df = pd.read_csv(csv_path)
+        feature_cols = ['point_count', 'ransac_inlier_ratio', 'std_x', 'std_y', 'std_z', 'aspect_ratio']
+        
+        if 'confidence' in df.columns:
+            X_reg = df[feature_cols]
+            y_reg = df['confidence']  # continuous 0-100%
+            
+            from sklearn.ensemble import GradientBoostingRegressor
+            proba_scaler = StandardScaler()
+            X_reg_scaled = proba_scaler.fit_transform(X_reg)
+            
+            proba_model = GradientBoostingRegressor(
+                n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42
+            )
+            proba_model.fit(X_reg_scaled, y_reg)
+            best_proba_name = "GradientBoosting Regressor (confidence)"
+            
+            # Quick training error check
+            preds = proba_model.predict(X_reg_scaled)
+            mae = abs(preds - y_reg).mean()
+            print(f"Confidence regressor MAE on training data: {mae:.2f}%")
+        else:
+            print("Warning: 'confidence' column not found — skipping confidence regressor")
+            proba_model = None
+            proba_scaler = None
+            best_proba_name = "None"
 
         model_path = Path("output/models/best_model.joblib")
         model_path.parent.mkdir(parents=True, exist_ok=True)
 
-        joblib.dump(model, model_path)
+        joblib.dump({
+            "model": model,
+            "scaler": scaler,
+            "name": best_model_name,
+            "proba_model": proba_model,
+            "proba_scaler": proba_scaler,
+            "proba_name": best_proba_name,
+        }, model_path)
         print(f"Saved best model: {best_model_name} -> {model_path}")
+        if proba_model is not None:
+            print(f"Saved confidence regressor: {best_proba_name}")
 
 
 def compare_between_csv(created_csv: Path, reference_csv: Path):
