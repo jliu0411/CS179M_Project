@@ -31,6 +31,62 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Reference measurements CSV
 REFERENCE_CSV = Path("Measurements_clean - Sheet1.csv")
 
+def calculate_quality_confidence(dimensions: Dict) -> float:
+    """
+    Calculate confidence score based on scan quality metrics alone.
+    Works for ANY PLY file without needing reference measurements.
+    
+    Args:
+        dimensions: Dict with quality metrics from dataclean()
+    
+    Returns:
+        Quality-based confidence score (0-100)
+    """
+    scores = []
+    
+    # 1. Point density score (20k-50k is optimal)
+    point_count = dimensions.get('point_count', 0)
+    if point_count >= 20000:
+        point_score = min(point_count / 30000, 1.5) * 0.67  # Cap at 100%
+    else:
+        point_score = point_count / 20000  # Linear below 20k
+    scores.append(min(point_score, 1.0))
+    
+    # 2. RANSAC quality (lower ratio = cleaner object extraction)
+    ransac_ratio = dimensions.get('ransac_inlier_ratio', 0)
+    # Invert: high inlier ratio means lots of floor, we want low ratio
+    ransac_score = 1.0 - min(ransac_ratio, 1.0)
+    scores.append(ransac_score)
+    
+    # 3. Aspect ratio (1.0-3.0 is typical for household objects)
+    aspect = dimensions.get('aspect_ratio', 0)
+    if 1.0 <= aspect <= 3.0:
+        aspect_score = 1.0
+    elif aspect < 1.0:
+        aspect_score = aspect  # Penalize if too small
+    else:
+        # Penalize extreme aspect ratios (may indicate bad segmentation)
+        aspect_score = max(0, 1.0 - (aspect - 3.0) / 5.0)
+    scores.append(aspect_score)
+    
+    # 4. Point spread consistency (lower std = more uniform density)
+    std_x = dimensions.get('std_x', 0.05)
+    std_y = dimensions.get('std_y', 0.05)
+    std_z = dimensions.get('std_z', 0.05)
+    avg_std = (std_x + std_y + std_z) / 3
+    # Good scans have std around 0.01-0.03
+    if avg_std <= 0.03:
+        spread_score = 1.0
+    else:
+        spread_score = max(0, 1.0 - (avg_std - 0.03) / 0.05)
+    scores.append(spread_score)
+    
+    # Weighted average (point count and RANSAC are most important)
+    weights = [0.25, 0.35, 0.20, 0.20]
+    confidence = sum(s * w for s, w in zip(scores, weights)) * 100
+    
+    return round(confidence, 2)
+
 def calculate_confidence(dimensions: Dict, filename: str) -> Optional[float]:
     """
     Calculate confidence score by comparing against reference measurements.
@@ -145,9 +201,16 @@ async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
         print(f"✅ Processing complete in {elapsed:.2f}s")
         print(f"   Dimensions: {dimensions['width']:.3f} x {dimensions['length']:.3f} x {dimensions['height']:.3f} m")
         
-        # Calculate confidence if reference data is available
+        # Try reference-based confidence first (accurate)
         confidence = calculate_confidence(dimensions, original_filename)
-        if confidence is not None:
+        confidence_type = "reference"
+        
+        # Fall back to quality-based confidence if no reference available
+        if confidence is None:
+            confidence = calculate_quality_confidence(dimensions)
+            confidence_type = "quality"
+            print(f"   Confidence: {confidence:.1f}% (quality-based)")
+        else:
             print(f"   Confidence: {confidence:.1f}% (vs reference measurements)")
         
         # Create cleaned filename
@@ -167,12 +230,9 @@ async def upload_ply(file: UploadFile = File(...), method: str = "AABB"):
                 "ransac_inlier_ratio": float(dimensions["ransac_inlier_ratio"]),
                 "aspect_ratio": float(dimensions["aspect_ratio"])
             },
+            "confidence": confidence,  # Always present now (reference or quality-based)
             "processing_time": round(elapsed, 2)
         }
-        
-        # Add confidence if available
-        if confidence is not None:
-            response_data["confidence"] = confidence
         
         return JSONResponse(content=response_data)
     
