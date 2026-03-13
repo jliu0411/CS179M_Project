@@ -1,0 +1,423 @@
+//
+//  ManualUploadView.swift
+//  PlyScan
+//
+//  Created on 3/8/26.
+//
+
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ManualUploadView: View {
+    @State private var showingFilePicker = false
+    @State private var selectedFileURL: URL?
+    @State private var isUploading = false
+    @State private var uploadResult: UploadResponse?
+    @State private var errorMessage: String?
+    @State private var showingResult = false
+    @State private var hasRequestedNetworkPermission = false
+    @State private var showServerSettings = false
+    @State private var manualServerIP = ""
+    
+    @StateObject private var serverDiscovery = ServerDiscovery.shared
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.up.doc.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+                        
+                        Text("Manual PLY Upload")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("Select a PLY file from your device to process and measure")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .padding(.top, 40)
+                    
+                    // Server Status Section
+                    GroupBox(label: Label("Server Status", systemImage: "network")) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let serverURL = serverDiscovery.discoveredServerURL {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 10, height: 10)
+                                    Text("Connected")
+                                        .font(.subheadline)
+                                        .foregroundColor(.green)
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        searchForServer()
+                                    }) {
+                                        Image(systemName: "arrow.clockwise")
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                    }
+                                    .disabled(serverDiscovery.isSearching)
+                                }
+                                
+                                Text(serverURL)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if serverDiscovery.isSearching {
+                                HStack {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Searching for server...")
+                                        .font(.subheadline)
+                                        .foregroundColor(.orange)
+                                }
+                            } else {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 10, height: 10)
+                                    Text("Not Connected")
+                                        .font(.subheadline)
+                                        .foregroundColor(.red)
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        searchForServer()
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.clockwise")
+                                            Text("Retry")
+                                        }
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(6)
+                                    }
+                                    .disabled(serverDiscovery.isSearching)
+                                }
+                                
+                                Text("Make sure your Mac server is running")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Button(action: {
+                                showServerSettings.toggle()
+                            }) {
+                                Text(showServerSettings ? "Hide Settings" : "Manual Server Entry")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            if showServerSettings {
+                                VStack(spacing: 8) {
+                                    TextField("Enter Mac IP (e.g., 192.168.x.x)", text: $manualServerIP)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .autocapitalization(.none)
+                                        .keyboardType(.decimalPad)
+                                    
+                                    Button("Set Manual Server") {
+                                        if !manualServerIP.isEmpty {
+                                            let serverURL = "http://\(manualServerIP):8000"
+                                            serverDiscovery.discoveredServerURL = serverURL
+                                            errorMessage = "Testing server at \(serverURL)..."
+                                            showServerSettings = false
+                                        }
+                                    }
+                                    .font(.caption)
+                                    .padding(8)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(6)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    .padding(.horizontal)
+                    
+                    // File Selection
+                    if let fileURL = selectedFileURL {
+                        GroupBox {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Selected File")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(fileURL.lastPathComponent)
+                                        .font(.headline)
+                                    
+                                    if let fileSize = getFileSize(fileURL) {
+                                        Text("\(fileSize) KB")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    selectedFileURL = nil
+                                    uploadResult = nil
+                                    errorMessage = nil
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                        .font(.title2)
+                                }
+                            }
+                            .padding()
+                        }
+                        .padding(.horizontal)
+                    }
+                    
+                    // Action Buttons
+                    VStack(spacing: 12) {
+                        Button(action: {
+                            showingFilePicker = true
+                        }) {
+                            Label("Choose PLY File", systemImage: "folder")
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
+                        .disabled(isUploading)
+                        
+                        if selectedFileURL != nil {
+                            Button(action: uploadFile) {
+                                HStack {
+                                    if isUploading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        Text("Processing...")
+                                    } else {
+                                        Label("Process File", systemImage: "gearshape.arrow.triangle.2.circlepath")
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.green)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                            }
+                            .disabled(isUploading)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Error Message
+                    if let error = errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                    }
+                    
+                    // Results
+                    if let result = uploadResult {
+                        GroupBox(label: Label("Measurement Results", systemImage: "checkmark.circle.fill").foregroundColor(.green)) {
+                            VStack(spacing: 16) {
+                                MeasurementCard(label: "Width", value: result.dimensions.width, color: .blue)
+                                MeasurementCard(label: "Length", value: result.dimensions.length, color: .green)
+                                MeasurementCard(label: "Height", value: result.dimensions.height, color: .orange)
+                                
+                                // Confidence Score (reference-based) - prioritize this if available
+                                if let confidence = result.confidence {
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                    
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .foregroundColor(.green)
+                                            Text("Confidence Score")
+                                                .font(.headline)
+                                            Spacer()
+                                            Text("\(Int(confidence))%")
+                                                .font(.title3)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(qualityColor(for: confidence))
+                                        }
+                                        
+                                        Text("According to prediction model")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .italic()
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    saveToLibrary(result: result)
+                                }) {
+                                    Label("Save to Library", systemImage: "folder.badge.plus")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.purple)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(10)
+                                }
+                            }
+                            .padding()
+                        }
+                        .padding(.horizontal)
+                    }
+                    
+                    Spacer()
+                }
+            }
+            .navigationTitle("Upload")
+            .sheet(isPresented: $showingFilePicker) {
+                DocumentPicker(selectedURL: $selectedFileURL)
+            }
+            .onAppear {
+                // Initial attempt to trigger permission dialog (doesn't set retry flag)
+                if serverDiscovery.discoveredServerURL == nil {
+                    serverDiscovery.getServerURL { url in
+                        if let url = url {
+                            NSLog("✅ Server discovered on first try: \(url)")
+                        } else {
+                            NSLog("⚠️ Waiting for permission or manual retry...")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func searchForServer() {
+        // Use retryDiscovery for manual searches to prevent duplicate auto-retries
+        serverDiscovery.retryDiscovery { url in
+            if let url = url {
+                NSLog("✅ Server discovered: \(url)")
+            } else {
+                NSLog("⚠️ No server found on local network")
+            }
+        }
+    }
+    
+    private func getFileSize(_ url: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attributes[.size] as? Int64 else {
+            return nil
+        }
+        return String(format: "%.1f", Double(fileSize) / 1024.0)
+    }
+    
+    private func uploadFile() {
+        guard let fileURL = selectedFileURL else { return }
+        
+        isUploading = true
+        errorMessage = nil
+        uploadResult = nil
+        
+        UploadService.shared.uploadPLY(fileURL: fileURL, scanMode: .rgb) { result in
+            DispatchQueue.main.async {
+                isUploading = false
+                
+                switch result {
+                case .success(let response):
+                    uploadResult = response
+                case .failure(let error):
+                    errorMessage = "Upload failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func qualityColor(for score: Double) -> Color {
+        if score >= 75 {
+            return .green
+        } else if score >= 50 {
+            return .orange
+        } else {
+            return .red
+        }
+    }
+    
+    private func saveToLibrary(result: UploadResponse) {
+        guard let fileURL = selectedFileURL else { return }
+        
+        let record = ScanRecord(
+            filename: result.originalFilename,
+            dimensions: ScanRecord.Dimensions(
+                width: result.dimensions.width,
+                height: result.dimensions.height,
+                length: result.dimensions.length
+            ),
+            confidence: result.confidence,
+            qualityMetrics: result.qualityMetrics.map { metrics in
+                ScanRecord.QualityMetrics(
+                    pointCount: metrics.pointCount,
+                    ransacInlierRatio: metrics.ransacInlierRatio,
+                    aspectRatio: metrics.aspectRatio,
+                    qualityScore: metrics.qualityScore
+                )
+            },
+            scanMode: "Manual Upload",
+            localPath: fileURL.path
+        )
+        
+        LibraryManager.shared.addRecord(record)
+        
+        // Show confirmation
+        errorMessage = nil
+        uploadResult = nil
+        selectedFileURL = nil
+        
+        // Could add a toast notification here
+    }
+}
+
+// Document Picker for selecting PLY files
+struct DocumentPicker: UIViewControllerRepresentable {
+    @Binding var selectedURL: URL?
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType(filenameExtension: "ply")!])
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: DocumentPicker
+        
+        init(_ parent: DocumentPicker) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            
+            // Start accessing security-scoped resource
+            _ = url.startAccessingSecurityScopedResource()
+            
+            // Copy to temp directory for processing
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+            try? FileManager.default.removeItem(at: tempURL)
+            try? FileManager.default.copyItem(at: url, to: tempURL)
+            
+            parent.selectedURL = tempURL
+            
+            url.stopAccessingSecurityScopedResource()
+        }
+    }
+}

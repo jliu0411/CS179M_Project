@@ -22,6 +22,11 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     private var isScanning = false
     private var scanFolderURL: URL?
     
+    // Expose last scan folder for upload
+    var lastScanFolder: URL? {
+        return scanFolderURL
+    }
+    
     private var capturedFrames: [CaptureFrame] = []
     private var accumulatedPoints: [SIMD3<Float>] = []
     private var minPoint: SIMD3<Float>?
@@ -35,6 +40,8 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     @Published var heightCoverage: Int = 0
     @Published var currentTransform: simd_float4x4?
     @Published var scanMode: ScanMode = .rgb
+    @Published var isLiDARAvailable: Bool = false
+    @Published var isTrueDepthAvailable: Bool = false
     
     // MARK: - Frame Metadata
     struct CaptureFrame: Codable {
@@ -134,26 +141,15 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     }
     
     private func finalizeScan() {
-
         saveCapturedData()
-
         guard let folder = scanFolderURL else { return }
-
         pointQueue.sync {
-
             fileService.savePLY(points: accumulatedPoints, to: folder)
             if let dimensions = computeObjectDimensions() {
-                print(
-                    "Estimated object dimensions (m): " +
-                    "W=\(dimensions.x), H=\(dimensions.y), D=\(dimensions.z)"
-                    )
+                print("Estimated object dimensions (m): W=\(dimensions.x), H=\(dimensions.y), D=\(dimensions.z)")
             }
         }
-
-        // Delete RGB photos after generating PLY
-        if scanMode == .rgb {
-            fileService.deleteImages(in: folder)
-        }
+        if scanMode == .rgb { fileService.deleteImages(in: folder) }
     }
     
     // MARK: - TrueDepth Processing
@@ -220,38 +216,36 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     
     // MARK: - LiDAR Processing
     private func processLidarFrame(_ frame: ARFrame) {
-
         guard let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth else {
             print("No LiDAR depth available")
             return
         }
 
         let transform = frame.camera.transform
-
-        let position = SIMD3<Float>(
-            transform.columns.3.x,
-            transform.columns.3.y,
-            transform.columns.3.z
-        )
-
-        scanPositions.append(position)
-
-        updateCoverage()
-
-        frameCount += 1
-
-        let depthMap = depthData.depthMap
-        let confidenceMap = depthData.confidenceMap
         let cameraIntrinsics = frame.camera.intrinsics
         let imageResolution = frame.camera.imageResolution
 
+        let depthMap = depthData.depthMap
+        let confidenceMap = depthData.confidenceMap
+
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        CVPixelBufferLockBaseAddress(confidenceMap!, .readOnly)
+        if let confidenceMap {
+            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
+        }
+
+        defer {
+            if let confidenceMap {
+                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
+            }
+            CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
+        }
 
         let width = CVPixelBufferGetWidth(depthMap)
         let height = CVPixelBufferGetHeight(depthMap)
 
-        //let base = CVPixelBufferGetBaseAddress(depthMap)!
+        guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return }
+        let buffer = base.assumingMemoryBound(to: Float32.self)
+
         let scaleX = Float(width) / Float(imageResolution.width)
         let scaleY = Float(height) / Float(imageResolution.height)
 
@@ -260,132 +254,109 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
         let cx = cameraIntrinsics[2][0] * scaleX
         let cy = cameraIntrinsics[2][1] * scaleY
 
-        guard let base = CVPixelBufferGetBaseAddress(depthMap),
-              let confidenceBase = CVPixelBufferGetBaseAddress(confidenceMap!) else {
-            CVPixelBufferUnlockBaseAddress(confidenceMap!, .readOnly)
-            CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
-            return
-        }
-        
-        let buffer = base.assumingMemoryBound(to: Float32.self)
-        let confidenceBuffer = confidenceBase.assumingMemoryBound(to: UInt8.self)
-
-
-//        for y in stride(from: 0, to: height, by: 4) {
-//            for x in stride(from: 0, to: width, by: 4) {
-        
         let depthRowStride = CVPixelBufferGetBytesPerRow(depthMap) / MemoryLayout<Float32>.size
-        let confidenceRowStride = CVPixelBufferGetBytesPerRow(confidenceMap!)
+        var confidenceBuffer: UnsafeMutablePointer<UInt8>? = nil
+        var confidenceRowStride: Int = 0
+        if let confidenceMap,
+           let confidenceBase = CVPixelBufferGetBaseAddress(confidenceMap) {
+            confidenceBuffer = confidenceBase.assumingMemoryBound(to: UInt8.self)
+            confidenceRowStride = CVPixelBufferGetBytesPerRow(confidenceMap)
+        }
 
         var newPoints: [SIMD3<Float>] = []
         newPoints.reserveCapacity((width / 3) * (height / 3))
 
         for y in stride(from: 0, to: height, by: 3) {
             for x in stride(from: 0, to: width, by: 3) {
+                if let confidenceBuffer {
+                    let confidenceIdx = y * confidenceRowStride + x
+                    let confidence = confidenceBuffer[confidenceIdx]
+                    if confidence == 0 { continue }
+                }
 
                 let depthIdx = y * depthRowStride + x
-                let confidenceIdx = y * confidenceRowStride + x
-                let confidence = confidenceBuffer[confidenceIdx]
-
-                // 0 = low, 1 = medium, 2 = high
-                if confidence == 0 { continue }
-
                 let depth = buffer[depthIdx]
-
                 if !depth.isFinite || depth <= 0.05 || depth > 5.0 { continue }
-                
+
                 let cameraX = (Float(x) - cx) * depth / fx
                 let cameraY = -((Float(y) - cy) * depth / fy)
                 let cameraZ = -depth
-        // let depth = buffer[y * width + x]
 
-                //if depth == 0 { continue }
-
-//                accumulatedPoints.append(
-//                    SIMD3<Float>(Float(x), Float(y), depth)
                 let localPoint = SIMD4<Float>(cameraX, cameraY, cameraZ, 1)
                 let worldPoint = transform * localPoint
-
-                newPoints.append(
-                    SIMD3<Float>(worldPoint.x, worldPoint.y, worldPoint.z)
-                )
+                newPoints.append(SIMD3<Float>(worldPoint.x, worldPoint.y, worldPoint.z))
             }
         }
 
-        CVPixelBufferUnlockBaseAddress(confidenceMap!, .readOnly)
-        CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
-        
         pointQueue.async {
-            for point in newPoints {
-                self.expandBoundingBox(with: point)
-            }
-
+            for point in newPoints { self.expandBoundingBox(with: point) }
             self.accumulatedPoints.append(contentsOf: newPoints)
-
             if self.accumulatedPoints.count > 1_500_000 {
                 self.accumulatedPoints.removeFirst(300_000)
                 self.recalculateBoundsFromAccumulatedPoints()
             }
         }
+
+        frameCount += 1
     }
-
-        private func expandBoundingBox(with point: SIMD3<Float>) {
-            if minPoint == nil || maxPoint == nil {
-                minPoint = point
-                maxPoint = point
-                return
-            }
-
-            minPoint = SIMD3<Float>(
-                Swift.min(minPoint!.x, point.x),
-                Swift.min(minPoint!.y, point.y),
-                Swift.min(minPoint!.z, point.z)
-            )
-
-            maxPoint = SIMD3<Float>(
-                Swift.max(maxPoint!.x, point.x),
-                Swift.max(maxPoint!.y, point.y),
-                Swift.max(maxPoint!.z, point.z)
-            )
+    
+    private func expandBoundingBox(with point: SIMD3<Float>) {
+        if minPoint == nil || maxPoint == nil {
+            minPoint = point
+            maxPoint = point
+            return
         }
 
-        private func recalculateBoundsFromAccumulatedPoints() {
-            guard let first = accumulatedPoints.first else {
-                minPoint = nil
-                maxPoint = nil
-                return
-            }
+        minPoint = SIMD3<Float>(
+            Swift.min(minPoint!.x, point.x),
+            Swift.min(minPoint!.y, point.y),
+            Swift.min(minPoint!.z, point.z)
+        )
 
-            var localMin = first
-            var localMax = first
+        maxPoint = SIMD3<Float>(
+            Swift.max(maxPoint!.x, point.x),
+            Swift.max(maxPoint!.y, point.y),
+            Swift.max(maxPoint!.z, point.z)
+        )
+    }
 
-            for point in accumulatedPoints.dropFirst() {
-                localMin = SIMD3<Float>(
+    private func recalculateBoundsFromAccumulatedPoints() {
+        guard let first = accumulatedPoints.first else {
+            minPoint = nil
+            maxPoint = nil
+            return
+        }
+
+        var localMin = first
+        var localMax = first
+
+        for point in accumulatedPoints.dropFirst() {
+            localMin = SIMD3<Float>(
                 Swift.min(localMin.x, point.x),
                 Swift.min(localMin.y, point.y),
                 Swift.min(localMin.z, point.z)
-                )
+            )
 
-                localMax = SIMD3<Float>(
-                    Swift.max(localMax.x, point.x),
-                    Swift.max(localMax.y, point.y),
-                    Swift.max(localMax.z, point.z)
-                )
-            }
-
-            minPoint = localMin
-            maxPoint = localMax
+            localMax = SIMD3<Float>(
+                Swift.max(localMax.x, point.x),
+                Swift.max(localMax.y, point.y),
+                Swift.max(localMax.z, point.z)
+            )
         }
 
-        private func computeObjectDimensions() -> SIMD3<Float>? {
-            guard let minPoint, let maxPoint else { return nil }
-            return maxPoint - minPoint
-        }
+        minPoint = localMin
+        maxPoint = localMax
+    }
+
+    private func computeObjectDimensions() -> SIMD3<Float>? {
+        guard let minPoint, let maxPoint else { return nil }
+        return maxPoint - minPoint
+    }
     
     // MARK: - RGB Processing
     private func processRGBFrame(_ frame: ARFrame) {
         
-        guard frame.camera.trackingState == .normal else { return }
+        guard case .normal = frame.camera.trackingState else { return }
         if capturedFrames.count > 120 { return }
         
         if let rawPoints = frame.rawFeaturePoints {
@@ -518,21 +489,50 @@ class ARSessionManager: NSObject, ObservableObject, ARSessionDelegate {
     // MARK: - Detect Mode
     func detectScanMode() {
         
-        if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+        // Check LiDAR availability
+        isLiDARAvailable = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+        
+        // Check TrueDepth availability
+        isTrueDepthAvailable = AVCaptureDevice.default(.builtInTrueDepthCamera,
+                                                        for: .video,
+                                                        position: .front) != nil
+        
+        // Auto-select best available mode
+        if isLiDARAvailable {
             scanMode = .lidar
             print("Using LiDAR mode")
-            return
-        }
-        
-        if AVCaptureDevice.default(.builtInTrueDepthCamera,
-                                   for: .video,
-                                   position: .front) != nil {
+        } else if isTrueDepthAvailable {
             scanMode = .trueDepth
             print("Using TrueDepth mode")
+        } else {
+            scanMode = .rgb
+            print("Using RGB mode")
+        }
+    }
+    
+    // MARK: - Change Mode
+    func changeScanMode(to newMode: ScanMode) {
+        // Safety check: prevent switching to unavailable modes
+        if newMode == .lidar && !isLiDARAvailable {
+            print("⚠️ Cannot switch to LiDAR: not available on this device")
+            return
+        }
+        if newMode == .trueDepth && !isTrueDepthAvailable {
+            print("⚠️ Cannot switch to TrueDepth: not available on this device")
             return
         }
         
-        scanMode = .rgb
-        print("Using RGB mode")
+        scanMode = newMode
+        print("Switching to \(newMode) mode")
+        
+        // Restart session with new configuration
+        if newMode == .trueDepth {
+            session.pause()
+            trueDepthScanner.start()
+        } else {
+            trueDepthScanner.stop()
+            startSession()
+        }
     }
 }
+

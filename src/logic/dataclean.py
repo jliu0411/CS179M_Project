@@ -25,8 +25,6 @@ def dataclean(dir:str,
     ####
     
     pcd = o3d.io.read_point_cloud(dir)
-    pcd_raw = pcd
-    total_points = len(pcd.points)
     show_step("Original Point Cloud", pcd)
 
     output_dir = Path(output_dir)
@@ -111,7 +109,7 @@ def dataclean(dir:str,
 
     #####################################
 
-    # --- 6. Optional: voxel downsampling ---
+     # --- 6. Optional: voxel downsampling ---
     pcd_target = pcd_target.voxel_down_sample(voxel_size=0.002)
 
     # --- 7. PCA alignment ---
@@ -146,7 +144,7 @@ def dataclean(dir:str,
        std_ratio=1.0
     )
 
-    show_step("After Geometric Normalization", pcd_target)
+    show_step("After Fine Tuning", pcd_target)
     #####################################
 
     width = length = height = 0
@@ -251,8 +249,25 @@ def dataclean(dir:str,
     
     filename = dir.split('/')[-1]
 
+    # Calculate quality metrics
+    final_points = np.asarray(pcd_target.points)
+    point_count = len(final_points)
+    
+    # RANSAC inlier ratio
+    total_points_before_ransac = len(np.asarray(pcd_histogram.points))
+    ransac_inlier_ratio = len(inliers) / total_points_before_ransac if total_points_before_ransac > 0 else 0
+    
+    # Standard deviations along each axis
+    std_x = float(np.std(final_points[:, 0]))
+    std_y = float(np.std(final_points[:, 1]))
+    std_z = float(np.std(final_points[:, 2]))
+    
+    # Aspect ratio (max dimension / min dimension)
+    dims_array = np.array([width, length, height])
+    aspect_ratio = float(np.max(dims_array) / np.min(dims_array)) if np.min(dims_array) > 0 else 0
+
     if verbose:
-        print(f"{method} dimensions of {filename}:")
+        print(f"\n{method} dimensions of {filename}:")
         print(f"Width:  {width:.3f}")
         print(f"Length: {length:.3f}")
         print(f"Height: {height:.3f}")
@@ -265,42 +280,15 @@ def dataclean(dir:str,
     if visualize_flag:
         o3d.visualization.draw_geometries(geometry_to_show)
 
-    features = extract_features(pcd_raw, pcd_target, inliers, total_points)
-    
-    # Return dimensions for batch processing
+    # Return dimensions and quality metrics for batch processing
     return {
         'width': float(width),
         'length': float(length),
         'height': float(height),
-        'point_count': features['point_count'],
-        'ransac_inlier_ratio': features['ransac_inlier_ratio'],
-        'std_x': features['std_x'],
-        'std_y': features['std_y'],
-        'std_z': features['std_z'],
-        'aspect_ratio': features['aspect_ratio']
-    }
-
-def extract_features(pcd_raw, pcd_target, inliers, total_points):
-    pts = np.asarray(pcd_target.points)
-    
-    point_count = len(pts)
-    ransac_inlier_ratio = len(inliers) / total_points
-    
-    # How spread out the final cluster is
-    std_x = pts[:, 0].std()
-    std_y = pts[:, 1].std()
-    std_z = pts[:, 2].std()
-    
-    # Box shape sanity - a good box should have reasonable aspect ratio
-    dims = pts.max(axis=0) - pts.min(axis=0)
-    sorted_dims = np.sort(dims)
-    aspect_ratio = float(sorted_dims[0] / sorted_dims[2]) if sorted_dims[2] != 0 else 0
-    
-    return {
-        "point_count": point_count,
-        "ransac_inlier_ratio": ransac_inlier_ratio,
-        "std_x": std_x,
-        "std_y": std_y,
-        "std_z": std_z,
-        "aspect_ratio": aspect_ratio
+        'point_count': point_count,
+        'ransac_inlier_ratio': float(ransac_inlier_ratio),
+        'std_x': std_x,
+        'std_y': std_y,
+        'std_z': std_z,
+        'aspect_ratio': aspect_ratio
     }
