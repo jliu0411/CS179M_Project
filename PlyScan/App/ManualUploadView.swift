@@ -119,7 +119,7 @@ struct ManualUploadView: View {
                             
                             if showServerSettings {
                                 VStack(spacing: 8) {
-                                    TextField("Enter Mac IP (e.g., 10.13.173.118)", text: $manualServerIP)
+                                    TextField("Enter Mac IP (e.g., 192.168.x.x)", text: $manualServerIP)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                         .autocapitalization(.none)
                                         .keyboardType(.decimalPad)

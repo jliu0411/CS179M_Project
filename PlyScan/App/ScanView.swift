@@ -274,7 +274,8 @@ struct ScanView: View {
                 case .failure(let error):
                     let errorMsg = error.localizedDescription
                     NSLog("❌ Upload failed: %@", errorMsg)
-                    uploadMessage = "❌ Upload failed:\n\n\(errorMsg)\n\nServer: http://192.168.1.47:8000"
+                    let serverDisplay = ServerDiscovery.shared.discoveredServerURL ?? "(not discovered)"
+                    uploadMessage = "❌ Upload failed:\n\n\(errorMsg)\n\nServer: \(serverDisplay)"
                 }
                 showingUploadStatus = true
             }

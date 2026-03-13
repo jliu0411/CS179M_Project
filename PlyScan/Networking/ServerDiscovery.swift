@@ -177,7 +177,7 @@ class ServerDiscovery: ObservableObject {
     func discoverServer(completion: @escaping (String?) -> Void) {
         isSearching = true
         
-        // Get local IP prefix (e.g., "10.13.173")
+        // Get local IP prefix (e.g., "192.168.x")
         guard let localIP = getLocalIPAddress() else {
             NSLog("❌ Could not determine local IP address")
             isSearching = false
